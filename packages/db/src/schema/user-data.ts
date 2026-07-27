@@ -1,0 +1,12 @@
+import { relations, sql } from "drizzle-orm";
+import { check, date, index, integer, pgTable, text, uniqueIndex, uuid } from "drizzle-orm/pg-core";
+import { createdAt, primaryId, updatedAt } from "./common";
+import { destinations } from "./catalog";
+import { users } from "./identity";
+
+export const favorites = pgTable("favorites", { userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }), destinationId: uuid("destination_id").notNull().references(() => destinations.id), createdAt: createdAt() }, (table) => [uniqueIndex("favorites_user_destination_unique").on(table.userId, table.destinationId), index("favorites_user_cursor_idx").on(table.userId, table.createdAt, table.destinationId)]);
+export const likes = pgTable("likes", { userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }), destinationId: uuid("destination_id").notNull().references(() => destinations.id), createdAt: createdAt() }, (table) => [uniqueIndex("likes_user_destination_unique").on(table.userId, table.destinationId), index("likes_destination_idx").on(table.destinationId)]);
+export const trips = pgTable("trips", { id: primaryId(), userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }), name: text("name").notNull(), startDate: date("start_date"), endDate: date("end_date"), notes: text("notes"), createdAt: createdAt(), updatedAt: updatedAt() }, (table) => [index("trips_user_cursor_idx").on(table.userId, table.updatedAt, table.id), check("trips_date_order_check", sql`${table.startDate} is null or ${table.endDate} is null or ${table.startDate} <= ${table.endDate}`)]);
+export const tripDestinations = pgTable("trip_destinations", { id: primaryId(), tripId: uuid("trip_id").notNull().references(() => trips.id, { onDelete: "cascade" }), destinationId: uuid("destination_id").notNull().references(() => destinations.id), position: integer("position").notNull(), notes: text("notes"), createdAt: createdAt() }, (table) => [uniqueIndex("trip_destinations_position_unique").on(table.tripId, table.position), uniqueIndex("trip_destinations_destination_unique").on(table.tripId, table.destinationId), check("trip_destinations_position_check", sql`${table.position} >= 0`)]);
+
+export const tripsRelations = relations(trips, ({ one, many }) => ({ owner: one(users, { fields: [trips.userId], references: [users.id] }), destinations: many(tripDestinations) }));

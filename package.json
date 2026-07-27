@@ -1,0 +1,25 @@
+{
+  "name": "sawasdee-travel-platform",
+  "version": "1.0.0",
+  "private": true,
+  "packageManager": "bun@1.3.14",
+  "workspaces": ["apps/*", "packages/*"],
+  "scripts": {
+    "dev": "bun run --filter './apps/*' dev",
+    "dev:web": "bun --cwd apps/web dev",
+    "dev:api": "bun --cwd apps/api dev",
+    "dev:worker": "bun --cwd apps/worker dev",
+    "build": "bun run --filter './packages/*' build && bun run --filter './apps/*' build",
+    "typecheck": "bun run --filter '*' typecheck",
+    "test": "bun test",
+    "lint": "bun run --filter './apps/web' lint",
+    "db:generate": "bun --cwd packages/db generate",
+    "db:migrate": "bun --cwd packages/db migrate",
+    "db:seed": "bun --cwd packages/db seed"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.56.1",
+    "@types/bun": "^1.3.1",
+    "typescript": "^5.9.3"
+  }
+}

@@ -1,0 +1,53 @@
+import type { Locale } from "@tourism/contracts";
+
+export const locales: Locale[] = ["en", "th"];
+export const defaultLocale: Locale = "en";
+
+const dictionaries = {
+  en: {
+    brand: "Sawasdee",
+    tagline: "Travel Thailand, then the world",
+    nav: { home: "Home", explore: "Explore", categories: "Categories", ai: "AI Search", trips: "Trips", saved: "Saved", profile: "Profile", settings: "Settings", signIn: "Sign in" },
+    common: { thailand: "Thailand", worldwide: "Worldwide", search: "Search", viewAll: "View all", save: "Save", saved: "Saved", like: "Like", liked: "Liked", setOrigin: "Set origin", minutes: "min", rating: "rating", retry: "Try again", close: "Close", delete: "Delete", cancel: "Cancel", confirm: "Confirm", loading: "Loading", noResults: "No destinations found", learnMore: "View destination", addToTrip: "Add to trip", useLocation: "Use my location" },
+    home: { eyebrow: "Curated journeys, grounded in real places", title: "Sawasdee", description: "Find the trip that fits how you want to feel. Explore handpicked destinations across Thailand and beyond.", searchPlaceholder: "Where do you want to go, or what do you want to feel?", featured: "Featured escapes", trending: "Trending now", popular: "Most loved", seasonal: "Right for this season", personalized: "Picked for you", categories: "Explore by interest" },
+    explore: { title: "Explore destinations", description: "Filter the curated catalog and compare places on the map.", filters: "Filters", category: "Category", traveler: "Traveler type", dates: "Travel dates", location: "Geography", distance: "Maximum distance", sort: "Sort by", map: "Map", list: "List", loadMore: "Load more", reset: "Reset filters", country: "Country code", province: "Province", city: "City", startDate: "Start date", endDate: "End date" },
+    auth: { title: "Sign in to continue", description: "Use Google or Facebook to save places, like destinations, plan trips, and request AI recommendations.", google: "Continue with Google", facebook: "Continue with Facebook", demo: "Continue with demo account", loginTitle: "Your next trip starts here", loginDescription: "One account keeps your saved places, preferences, and trips in sync.", protected: "This area is for signed-in travelers." },
+    destination: { about: "About this place", gettingThere: "Getting there", location: "Location", bestTime: "Best months", openingHours: "Opening hours", website: "Official website", planVisit: "Plan your visit", selectTrip: "Choose a trip", createTrip: "Create a new trip", noTrips: "Create a trip first to add this destination." },
+    categories: { title: "Find your kind of trip", description: "Browse the catalog by what draws you outside." },
+    saved: { title: "Saved destinations", empty: "No saved destinations yet", emptyDescription: "Save places while exploring and they will appear here." },
+    trips: { title: "Your trips", newTrip: "New trip", tripName: "Trip name", dates: "Dates", notes: "Notes", empty: "No trips planned yet", emptyDescription: "Create a trip and collect destinations in the order you want to visit them.", itinerary: "Destination order", drag: "Drag destinations to reorder", removeDestination: "Remove from trip", deleteTrip: "Delete trip", saveChanges: "Save changes", create: "Create trip" },
+    ai: { title: "AI destination search", description: "Describe the experience you want. Results stay inside our curated catalog.", prompt: "What would make this trip memorable?", promptPlaceholder: "A quiet four-day nature escape with cool weather and easy hikes...", filters: "Refine the search", submit: "Find destinations", queued: "Recommendation queued", filtering: "Filtering the catalog", routing: "Checking travel fit", ranking: "Ranking destinations", completed: "Recommendations ready", failed: "Recommendation failed", fallback: "Provider fallback used", reason: "Why it fits", history: "Save searches to my history" },
+    profile: { title: "Profile", displayName: "Display name", email: "Email", language: "Language", save: "Save profile", updated: "Profile updated" },
+    settings: { title: "Settings", preferences: "Travel preferences", defaultScope: "Default catalog", travelerTypes: "Traveler types", categories: "Preferred categories", aiHistory: "Save redacted AI search history", theme: "Appearance", system: "System", light: "Light", dark: "Dark", save: "Save preferences", updated: "Preferences updated" },
+    errors: { generic: "Something went wrong", genericDescription: "The request could not be completed. Try again.", notFound: "This route is off the map", notFoundDescription: "The page may have moved, or the destination is no longer available.", backHome: "Return home" },
+  },
+  th: {
+    brand: "สวัสดี",
+    tagline: "เที่ยวไทย แล้วไปต่อทั่วโลก",
+    nav: { home: "หน้าหลัก", explore: "สำรวจ", categories: "หมวดหมู่", ai: "ค้นหาด้วย AI", trips: "ทริป", saved: "ที่บันทึก", profile: "โปรไฟล์", settings: "ตั้งค่า", signIn: "เข้าสู่ระบบ" },
+    common: { thailand: "ประเทศไทย", worldwide: "ทั่วโลก", search: "ค้นหา", viewAll: "ดูทั้งหมด", save: "บันทึก", saved: "บันทึกแล้ว", like: "ถูกใจ", liked: "ถูกใจแล้ว", setOrigin: "ตั้งจุดเริ่มต้น", minutes: "นาที", rating: "คะแนน", retry: "ลองอีกครั้ง", close: "ปิด", delete: "ลบ", cancel: "ยกเลิก", confirm: "ยืนยัน", loading: "กำลังโหลด", noResults: "ไม่พบสถานที่", learnMore: "ดูสถานที่", addToTrip: "เพิ่มในทริป", useLocation: "ใช้ตำแหน่งของฉัน" },
+    home: { eyebrow: "ทริปที่คัดสรรจากสถานที่จริง", title: "สวัสดี", description: "ค้นหาทริปที่ตรงกับความรู้สึกของคุณ สำรวจสถานที่คัดสรรทั่วไทยและทั่วโลก", searchPlaceholder: "อยากไปที่ไหน หรืออยากรู้สึกแบบไหน?", featured: "จุดหมายแนะนำ", trending: "กำลังมาแรง", popular: "ยอดนิยม", seasonal: "เหมาะกับฤดูกาลนี้", personalized: "เลือกให้คุณ", categories: "ค้นหาตามความสนใจ" },
+    explore: { title: "สำรวจจุดหมาย", description: "กรองแค็ตตาล็อกและเปรียบเทียบสถานที่บนแผนที่", filters: "ตัวกรอง", category: "หมวดหมู่", traveler: "รูปแบบนักเดินทาง", dates: "วันที่เดินทาง", location: "พื้นที่", distance: "ระยะทางสูงสุด", sort: "เรียงตาม", map: "แผนที่", list: "รายการ", loadMore: "โหลดเพิ่ม", reset: "ล้างตัวกรอง", country: "รหัสประเทศ", province: "จังหวัด", city: "เมือง", startDate: "วันเริ่มต้น", endDate: "วันสิ้นสุด" },
+    auth: { title: "เข้าสู่ระบบเพื่อดำเนินการต่อ", description: "ใช้ Google หรือ Facebook เพื่อบันทึกสถานที่ กดถูกใจ วางแผนทริป และขอคำแนะนำจาก AI", google: "ดำเนินการต่อด้วย Google", facebook: "ดำเนินการต่อด้วย Facebook", demo: "ใช้บัญชีทดลอง", loginTitle: "ทริปถัดไปเริ่มต้นที่นี่", loginDescription: "บัญชีเดียวเก็บสถานที่ ความชอบ และทริปของคุณไว้ด้วยกัน", protected: "พื้นที่นี้สำหรับผู้เดินทางที่เข้าสู่ระบบแล้ว" },
+    destination: { about: "เกี่ยวกับสถานที่", gettingThere: "การเดินทาง", location: "ตำแหน่ง", bestTime: "เดือนที่เหมาะ", openingHours: "เวลาเปิด", website: "เว็บไซต์ทางการ", planVisit: "วางแผนการเที่ยว", selectTrip: "เลือกทริป", createTrip: "สร้างทริปใหม่", noTrips: "สร้างทริปก่อนเพื่อเพิ่มสถานที่นี้" },
+    categories: { title: "ค้นหาทริปในแบบของคุณ", description: "เลือกดูแค็ตตาล็อกตามสิ่งที่ชวนให้คุณออกเดินทาง" },
+    saved: { title: "สถานที่ที่บันทึก", empty: "ยังไม่มีสถานที่ที่บันทึก", emptyDescription: "บันทึกสถานที่ระหว่างสำรวจ แล้วจะพบได้ที่นี่" },
+    trips: { title: "ทริปของคุณ", newTrip: "ทริปใหม่", tripName: "ชื่อทริป", dates: "วันที่", notes: "บันทึก", empty: "ยังไม่มีแผนทริป", emptyDescription: "สร้างทริปและเรียงสถานที่ตามลำดับที่ต้องการเที่ยว", itinerary: "ลำดับสถานที่", drag: "ลากเพื่อจัดลำดับใหม่", removeDestination: "นำออกจากทริป", deleteTrip: "ลบทริป", saveChanges: "บันทึกการแก้ไข", create: "สร้างทริป" },
+    ai: { title: "ค้นหาจุดหมายด้วย AI", description: "บอกประสบการณ์ที่ต้องการ ผลลัพธ์จะอยู่ในแค็ตตาล็อกที่คัดสรรเท่านั้น", prompt: "อะไรจะทำให้ทริปนี้น่าจดจำ?", promptPlaceholder: "พักธรรมชาติสี่วัน อากาศเย็น เงียบสงบ และเดินป่าง่าย...", filters: "ปรับการค้นหา", submit: "ค้นหาจุดหมาย", queued: "เข้าคิวคำแนะนำแล้ว", filtering: "กำลังกรองแค็ตตาล็อก", routing: "กำลังตรวจสอบการเดินทาง", ranking: "กำลังจัดอันดับ", completed: "คำแนะนำพร้อมแล้ว", failed: "การแนะนำล้มเหลว", fallback: "ใช้ระบบสำรอง", reason: "เหตุผลที่เหมาะ", history: "บันทึกการค้นหาในประวัติ" },
+    profile: { title: "โปรไฟล์", displayName: "ชื่อที่แสดง", email: "อีเมล", language: "ภาษา", save: "บันทึกโปรไฟล์", updated: "อัปเดตโปรไฟล์แล้ว" },
+    settings: { title: "ตั้งค่า", preferences: "ความชอบการเดินทาง", defaultScope: "แค็ตตาล็อกเริ่มต้น", travelerTypes: "รูปแบบนักเดินทาง", categories: "หมวดหมู่ที่ชอบ", aiHistory: "บันทึกประวัติการค้นหา AI แบบปกปิดข้อมูล", theme: "รูปแบบหน้าจอ", system: "ตามระบบ", light: "สว่าง", dark: "มืด", save: "บันทึกการตั้งค่า", updated: "อัปเดตการตั้งค่าแล้ว" },
+    errors: { generic: "เกิดข้อผิดพลาด", genericDescription: "ไม่สามารถดำเนินการได้ กรุณาลองอีกครั้ง", notFound: "เส้นทางนี้ไม่มีบนแผนที่", notFoundDescription: "หน้าอาจถูกย้าย หรือสถานที่นี้ไม่มีให้บริการแล้ว", backHome: "กลับหน้าหลัก" },
+  },
+} as const;
+
+export type Dictionary = typeof dictionaries.en | typeof dictionaries.th;
+export function isLocale(value: string): value is Locale { return value === "en" || value === "th"; }
+export function getDictionary(locale: Locale): Dictionary { return dictionaries[locale]; }
+export function localizePath(pathname: string, locale: Locale): string {
+  const stripped = pathname.replace(/^\/(en|th)(?=\/|$)/, "");
+  return `/${locale}${stripped || ""}`;
+}
+export function alternates(path: string) {
+  const suffix = path === "/" ? "" : path;
+  return { canonical: `/en${suffix}`, languages: { en: `/en${suffix}`, th: `/th${suffix}`, "x-default": `/en${suffix}` } };
+}

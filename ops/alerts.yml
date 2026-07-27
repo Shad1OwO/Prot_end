@@ -1,0 +1,18 @@
+groups:
+  - name: tourism-platform
+    rules:
+      - alert: ApiUnavailable
+        expr: up{job="tourism-api"} == 0
+        for: 2m
+        labels: { severity: critical }
+        annotations: { summary: "Tourism API is unavailable" }
+      - alert: ElevatedServerErrors
+        expr: rate(http_requests_total{status=~"5.."}[5m]) > 0.05
+        for: 5m
+        labels: { severity: warning }
+        annotations: { summary: "API 5xx rate is elevated" }
+      - alert: RecommendationQueueBacklog
+        expr: recommendation_jobs_queued > 100
+        for: 10m
+        labels: { severity: warning }
+        annotations: { summary: "Recommendation queue backlog exceeds 100 jobs" }
