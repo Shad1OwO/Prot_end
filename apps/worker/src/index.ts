@@ -1,0 +1,38 @@
+import { getWorkerEnvironment } from "@tourism/config";
+import { PostgresRepository } from "@tourism/api/postgres-repository";
+import { Worker } from "bullmq";
+import { AiProviderRouter } from "./providers/ai";
+import { GoogleMapsRoutingProvider } from "./providers/maps";
+
+const env = getWorkerEnvironment();
+if (!env.DATABASE_URL || !env.REDIS_URL) throw new Error("DATABASE_URL and REDIS_URL are required for the worker");
+const repository = new PostgresRepository(env.DATABASE_URL, env.API_ORIGIN);
+const ai = new AiProviderRouter(env);
+const maps = new GoogleMapsRoutingProvider(env.GOOGLE_MAPS_API_KEY);
+const redis = new URL(env.REDIS_URL);
+
+const worker = new Worker("recommendations", async (queueJob) => {
+  const jobId = String(queueJob.data.jobId);
+  const stored = await repository.getJobRequest(jobId);
+  if (!stored) return;
+  try {
+    await repository.updateJob(jobId, { status: "filtering", progress: 20, statusMessage: "Filtering curated destinations", error: null });
+    let candidates = await repository.shortlist(stored.request, 20);
+    await repository.updateJob(jobId, { status: "routing", progress: 50, statusMessage: "Checking route eligibility", error: null });
+    if (stored.request.filters.origin && maps.configured) {
+      const routes = await maps.estimate(stored.request.filters.origin, candidates.slice(0, 12));
+      if (stored.request.filters.maxDistanceKm) { const allowed = new Set(routes.filter((route) => route.distanceKm !== null && route.distanceKm <= (stored.request.filters.maxDistanceKm as number)).map((route) => route.destinationId)); candidates = candidates.filter((item) => allowed.has(item.id)); }
+    }
+    await repository.updateJob(jobId, { status: "ranking", progress: 75, statusMessage: "Ranking catalog matches", error: null });
+    const ranked = await ai.rank(stored.request, candidates.slice(0, 12));
+    await repository.saveResult(jobId, ranked.response, ranked.provider, ranked.fallback);
+    const preferences = await repository.getPreferences(stored.userId);
+    if (preferences.aiHistoryOptIn) await repository.storeHistory(stored.userId, jobId, stored.request.prompt.replace(/(?:[\w.+-]+@[\w.-]+\.[a-z]{2,}|\+?\d[\d\s().-]{7,}\d)/gi, "[redacted]"), new Date(Date.now() + env.HISTORY_RETENTION_DAYS * 86_400_000));
+    await repository.updateJob(jobId, { status: "completed", progress: 100, statusMessage: "Recommendations ready", error: null });
+  } catch (error) { await repository.updateJob(jobId, { status: "failed", progress: 100, statusMessage: "Recommendation failed", error: error instanceof Error ? error.message : "Unknown worker error" }); throw error; }
+}, { connection: { host: redis.hostname, port: Number(redis.port || 6379), username: redis.username || undefined, password: redis.password || undefined, tls: redis.protocol === "rediss:" ? {} : undefined }, concurrency: 4 });
+
+console.info(JSON.stringify({ level: "info", message: "worker_started", concurrency: 4 }));
+async function shutdown() { await worker.close(); await repository.close(); process.exit(0); }
+process.once("SIGINT", () => { void shutdown(); });
+process.once("SIGTERM", () => { void shutdown(); });

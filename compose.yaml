@@ -129,7 +129,7 @@ services:
 
   prometheus:
     image: prom/prometheus:v3.7.3
-    volumes: [./ops/prometheus.yml:/etc/prometheus/prometheus.yml:ro, prometheus_data:/prometheus]
+    volumes: [./ops/prometheus.yml:/etc/prometheus/prometheus.yml:ro, ./ops/alerts.yml:/etc/prometheus/alerts.yml:ro, prometheus_data:/prometheus]
     networks: [app]
     restart: unless-stopped
 

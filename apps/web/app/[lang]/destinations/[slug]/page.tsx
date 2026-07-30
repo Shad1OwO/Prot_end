@@ -4,8 +4,9 @@ import { DestinationDetailPage } from "@/components/destination-detail-page";
 import { apiOrigin } from "@/lib/api";
 import { alternates, getDictionary, isLocale } from "@/lib/i18n";
 import type { DestinationDetail } from "@tourism/contracts";
+type DestinationPageProps = { params: Promise<{ lang: string; slug: string }> };
 
-export async function generateMetadata({ params }: PageProps<"/[lang]/destinations/[slug]">): Promise<Metadata> {
+export async function generateMetadata({ params }: DestinationPageProps): Promise<Metadata> {
   const { lang, slug } = await params;
   if (!isLocale(lang)) return {};
   const fallbackTitle = slug.replaceAll("-", " ");
@@ -19,7 +20,7 @@ export async function generateMetadata({ params }: PageProps<"/[lang]/destinatio
   }
 }
 
-export default async function Page({ params }: PageProps<"/[lang]/destinations/[slug]">) {
+export default async function Page({ params }: DestinationPageProps) {
   const { lang, slug } = await params;
   if (!isLocale(lang)) notFound();
   return <DestinationDetailPage slug={slug} locale={lang} dictionary={getDictionary(lang)} />;

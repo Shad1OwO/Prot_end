@@ -3,6 +3,10 @@
   "version": "1.0.0",
   "private": true,
   "type": "module",
+  "exports": {
+    "./repositories": "./src/domain/repositories.ts",
+    "./postgres-repository": "./src/infrastructure/postgres-repository.ts"
+  },
   "scripts": {
     "dev": "bun --watch src/index.ts",
     "start": "bun src/index.ts",
