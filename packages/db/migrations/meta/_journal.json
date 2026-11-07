@@ -15,6 +15,13 @@
       "when": 1785168020231,
       "tag": "0001_loose_skin",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1785423548000,
+      "tag": "0002_windy_fenris",
+      "breakpoints": true
     }
   ]
 }

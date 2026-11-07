@@ -13,6 +13,13 @@ export const users = pgTable("users", {
   updatedAt: updatedAt(),
 }, (table) => [uniqueIndex("users_email_unique").on(table.email)]);
 
+export const emailCredentials = pgTable("email_credentials", {
+  userId: uuid("user_id").primaryKey().references(() => users.id, { onDelete: "cascade" }),
+  passwordHash: text("password_hash").notNull(),
+  createdAt: createdAt(),
+  updatedAt: updatedAt(),
+});
+
 export const oauthAccounts = pgTable("oauth_accounts", {
   id: primaryId(),
   userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
@@ -64,6 +71,7 @@ export const userPreferences = pgTable("user_preferences", {
 });
 
 export const usersRelations = relations(users, ({ many, one }) => ({
+  emailCredential: one(emailCredentials),
   oauthAccounts: many(oauthAccounts),
   sessions: many(sessions),
   preferences: one(userPreferences),

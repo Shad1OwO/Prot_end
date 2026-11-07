@@ -11,4 +11,4 @@ const datesAreOrdered = ({ startDate, endDate }: { startDate?: string | null | u
 export const tripCreateSchema = tripWriteSchema.refine(datesAreOrdered, { message: "End date must be on or after start date", path: ["endDate"] });
 export const tripUpdateSchema = tripWriteSchema.partial().refine(datesAreOrdered, { message: "End date must be on or after start date", path: ["endDate"] });
 export const tripDestinationCreateSchema = z.object({ destinationId: uuidSchema, notes: z.string().trim().max(1_000).nullable().default(null) });
-export const tripReorderSchema = z.object({ destinationIds: z.array(uuidSchema).min(1) });
+export const tripReorderSchema = z.object({ destinationIds: z.array(uuidSchema).min(1).max(500) });

@@ -1,6 +1,8 @@
 import { cors } from "@elysiajs/cors";
 import { getApiEnvironment, type ApiEnvironment } from "@tourism/config";
 import {
+  emailLoginSchema,
+  emailRegistrationSchema,
   localeSchema,
   mediaUploadRequestSchema,
   oauthProviderSchema,
@@ -15,11 +17,12 @@ import { CatalogController } from "./controllers/catalog-controller";
 import { ProfileController } from "./controllers/profile-controller";
 import { RecommendationController } from "./controllers/recommendation-controller";
 import { TripController } from "./controllers/trip-controller";
+import { assertRequestBodyWithinLimit } from "./http/body-limit";
 import { HttpError, problemFromError } from "./http/errors";
 import { parseCookies, parseInput } from "./http/validation";
 import { InMemoryRepository } from "./infrastructure/memory-repository";
 import { S3ObjectStorageProvider } from "./infrastructure/object-storage";
-import { FacebookOAuthProvider, GoogleOAuthProvider } from "./infrastructure/oauth-providers";
+import { GoogleOAuthProvider } from "./infrastructure/oauth-providers";
 import { PostgresRepository } from "./infrastructure/postgres-repository";
 import { InlineRecommendationQueue, RedisRecommendationQueue } from "./infrastructure/recommendation-queue";
 import { MetricsRegistry } from "./observability/metrics";
@@ -27,6 +30,7 @@ import { FixedWindowRateLimiter } from "./security/rate-limit";
 import { securityHeaders, verifyWriteRequest } from "./security/request-security";
 import { CatalogService } from "./services/catalog-service";
 import { issueDevelopmentSession } from "./services/development-auth";
+import { EmailAuthService } from "./services/email-auth-service";
 import { OAuthService } from "./services/oauth-service";
 import { ProfileService } from "./services/profile-service";
 import { DeterministicRecommendationProcessor } from "./services/recommendation-processor";
@@ -81,9 +85,9 @@ export function createApplication(options: CreateApplicationOptions = {}): Touri
   const sessions = new SessionService(repository, tokens, env);
   const oauthProviders = {
     google: new GoogleOAuthProvider(env.GOOGLE_CLIENT_ID, env.GOOGLE_CLIENT_SECRET),
-    facebook: new FacebookOAuthProvider(env.FACEBOOK_CLIENT_ID, env.FACEBOOK_CLIENT_SECRET),
   };
   const oauth = new OAuthService(repository, sessions, tokens, oauthProviders, env);
+  const emailAuth = new EmailAuthService(repository, sessions);
   const catalog = new CatalogController(new CatalogService(repository));
   const profile = new ProfileController(new ProfileService(repository));
   const social = new SocialService(repository);
@@ -116,6 +120,8 @@ export function createApplication(options: CreateApplicationOptions = {}): Touri
       const internalKey = request.headers.get("x-internal-api-key");
       const validInternalRequest = Boolean(internalKey && tokens.equal(internalKey, env.INTERNAL_API_KEY));
       if (!validInternalRequest) verifyWriteRequest(request, env.WEB_ORIGIN);
+      const isCatalogImport = validInternalRequest && new URL(request.url).pathname === "/api/v1/internal/catalog/imports";
+      if (!isCatalogImport) assertRequestBodyWithinLimit(request);
     })
     .onAfterResponse(({ request, set }) => {
       const current = telemetry.get(request);
@@ -180,6 +186,17 @@ export function createApplication(options: CreateApplicationOptions = {}): Touri
       const result = await objectStorage.createUploadTicket(parseInput(mediaUploadRequestSchema, body));
       set.status = 201;
       return result;
+    })
+    .post("/api/v1/auth/register", async ({ body, request, set }) => {
+      const issued = await emailAuth.register(parseInput(emailRegistrationSchema, body), request);
+      setCookies(set.headers, issued.cookies);
+      set.status = 201;
+      return issued.response;
+    })
+    .post("/api/v1/auth/login", async ({ body, request, set }) => {
+      const issued = await emailAuth.login(parseInput(emailLoginSchema, body), request);
+      setCookies(set.headers, issued.cookies);
+      return issued.response;
     })
     .get("/api/v1/auth/oauth/:provider/start", async ({ params, query, set }) => {
       const provider = parseInput(oauthProviderSchema, params.provider);

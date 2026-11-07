@@ -3,17 +3,53 @@
 ## Prerequisites
 
 - Hardened Linux host with Docker Engine, Compose v2, DNS, TLS ports 80/443, and off-host backup storage.
+- An existing Caddy container attached to an external Docker network named `caddy`.
 - PostgreSQL 17 with PostGIS 3.5 may run from `compose.yaml` or remotely. Set `DATABASE_URL` accordingly.
 - Redis 8 and S3-compatible object storage may run from Compose or remote services.
-- Google/Facebook OAuth callback URLs: `https://<APP_HOST>/api/v1/auth/oauth/<provider>/callback`.
+- Google OAuth callback URL: `https://<APP_HOST>/api/v1/auth/oauth/google/callback`.
 - Google Maps and at least one AI provider key. Missing AI providers are skipped; deterministic fallback remains available.
 
 ## Secrets and configuration
 
-1. Copy `.env.example` to `.env`; set production origins, remote service URLs, OAuth, Maps, AI, storage, Redis password, `APP_HOST`, and `ACME_EMAIL`.
+1. Copy `.env.example` to `.env`; set production origins, remote service URLs, OAuth, Maps, AI, storage, Redis password, and `APP_HOST`.
 2. Generate `JWT_SECRET` and `INTERNAL_API_KEY` with at least 32 random bytes.
 3. Create `secrets/postgres_password.txt`, `secrets/minio_access_key.txt`, `secrets/minio_secret_key.txt`, and `secrets/grafana_password.txt` with mode `0600`.
 4. Do not commit `.env` or `secrets/`.
+
+## Caddy reverse proxy
+
+The application does not publish host ports. Its `web` and `api` services join the external `caddy` Docker network using stable aliases. Ensure that network exists:
+
+```sh
+docker network inspect caddy >/dev/null 2>&1 || docker network create caddy
+```
+
+Add this site to the Caddyfile used by the existing Caddy container, replacing the hostname with the value of `APP_HOST`:
+
+```caddyfile
+travel.example.com {
+    encode zstd gzip
+
+    handle /api/* {
+        reverse_proxy tourism-api:4000
+    }
+
+    handle /health/* {
+        reverse_proxy tourism-api:4000
+    }
+
+    handle {
+        reverse_proxy tourism-web:3000
+    }
+}
+```
+
+Keep `/metrics` private; Prometheus accesses it directly over the internal `app` network. Validate and reload the central proxy after editing its Caddyfile:
+
+```sh
+docker exec caddy caddy validate --config /etc/caddy/Caddyfile
+docker exec caddy caddy reload --config /etc/caddy/Caddyfile
+```
 
 ## Release
 
@@ -44,7 +80,7 @@ curl -fsS https://$APP_HOST/api/v1/destinations?locale=en\&scope=thailand\&limit
 
 ## OAuth and provider checks
 
-- Complete one Google and Facebook sign-in in the protected environment.
+- Complete one Google sign-in and one email registration/login in the protected environment.
 - Submit one recommendation with an origin. Confirm queued/filtering/routing/ranking/completed events.
 - Confirm result IDs exist in `destinations`; unknown provider IDs must fail validation.
 - Verify deterministic fallback by temporarily disabling provider keys in a non-production environment.

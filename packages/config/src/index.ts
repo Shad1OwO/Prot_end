@@ -15,8 +15,6 @@ export const apiEnvironmentSchema = sharedSchema.extend({
   INTERNAL_API_KEY: z.string().min(16).default("development-internal-key"),
   GOOGLE_CLIENT_ID: z.string().optional(),
   GOOGLE_CLIENT_SECRET: z.string().optional(),
-  FACEBOOK_CLIENT_ID: z.string().optional(),
-  FACEBOOK_CLIENT_SECRET: z.string().optional(),
   S3_ENDPOINT: z.url().default("http://localhost:9000"),
   S3_REGION: z.string().default("us-east-1"),
   S3_BUCKET: z.string().default("tourism-media"),

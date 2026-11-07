@@ -7,7 +7,7 @@ export interface ApplicationContext {
   env: ApiEnvironment;
   repository: AppRepository;
   queue: RecommendationQueue;
-  oauthProviders: Record<"google" | "facebook", OAuthIdentityProvider>;
+  oauthProviders: Record<"google", OAuthIdentityProvider>;
   objectStorage: ObjectStorageProvider;
   metrics: MetricsRegistry;
   startedAt: number;

@@ -5,6 +5,9 @@ dist
 .env
 .env.*
 !.env.example
+secrets/
+pi-session-*.html
+cloc-*.exe
 *.log
 playwright-report
 test-results

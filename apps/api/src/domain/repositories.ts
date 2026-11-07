@@ -20,12 +20,12 @@ import type {
 
 export interface StoredOAuthAccount {
   userId: string;
-  provider: "google" | "facebook";
+  provider: "google";
   providerSubject: string;
 }
 
 export interface OAuthIdentity {
-  provider: "google" | "facebook";
+  provider: "google";
   subject: string;
   email: string;
   displayName: string;
@@ -63,7 +63,10 @@ export interface CatalogRepository {
 
 export interface IdentityRepository {
   findUserById(id: string): Promise<User | null>;
-  findUserByOAuth(provider: "google" | "facebook", subject: string): Promise<User | null>;
+  findUserByEmail(email: string): Promise<User | null>;
+  findEmailCredential(email: string): Promise<{ user: User; passwordHash: string } | null>;
+  createEmailCredential(input: { email: string; displayName: string; passwordHash: string; locale: Locale }): Promise<User>;
+  findUserByOAuth(provider: "google", subject: string): Promise<User | null>;
   upsertOAuthIdentity(identity: OAuthIdentity, locale: Locale): Promise<User>;
   updateProfile(userId: string, patch: { displayName?: string; locale?: Locale }): Promise<User>;
   getPreferences(userId: string): Promise<UserPreferences>;
