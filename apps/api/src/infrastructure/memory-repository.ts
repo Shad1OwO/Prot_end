@@ -82,6 +82,7 @@ function decodeCursor(cursor?: string): number {
 
 export class InMemoryRepository implements AppRepository {
   readonly #users = new Map<string, MemoryUserState>();
+  readonly #emailCredentials = new Map<string, { userId: string; passwordHash: string }>();
   readonly #oauthUsers = new Map<string, string>();
   readonly #sessions = new Map<string, SessionRecord>();
   readonly #refreshTokens = new Map<string, StoredRefreshToken>();
@@ -208,7 +209,30 @@ export class InMemoryRepository implements AppRepository {
     return this.#users.get(id)?.user ?? null;
   }
 
-  async findUserByOAuth(provider: "google" | "facebook", subject: string): Promise<User | null> {
+  async findUserByEmail(email: string): Promise<User | null> {
+    const normalized = email.trim().toLowerCase();
+    return [...this.#users.values()].find(({ user }) => user.email === normalized)?.user ?? null;
+  }
+
+  async findEmailCredential(email: string): Promise<{ user: User; passwordHash: string } | null> {
+    const credential = this.#emailCredentials.get(email.trim().toLowerCase());
+    if (!credential) return null;
+    const user = await this.findUserById(credential.userId);
+    return user ? { user, passwordHash: credential.passwordHash } : null;
+  }
+
+  async createEmailCredential(input: { email: string; displayName: string; passwordHash: string; locale: Locale }): Promise<User> {
+    const email = input.email.trim().toLowerCase();
+    if (this.#emailCredentials.has(email)) throw new Error("EMAIL_CREDENTIAL_EXISTS");
+    if (await this.findUserByEmail(email)) throw new Error("EMAIL_CREDENTIAL_EXISTS");
+    const id = crypto.randomUUID();
+    const user: User = { id, email, displayName: input.displayName, avatarUrl: null, locale: input.locale, createdAt: new Date().toISOString() };
+    this.#users.set(id, { user, preferences: { ...defaultPreferences, locale: input.locale } });
+    this.#emailCredentials.set(email, { userId: user.id, passwordHash: input.passwordHash });
+    return user;
+  }
+
+  async findUserByOAuth(provider: "google", subject: string): Promise<User | null> {
     const id = this.#oauthUsers.get(`${provider}:${subject}`);
     return id ? this.findUserById(id) : null;
   }

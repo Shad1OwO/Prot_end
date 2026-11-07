@@ -1,6 +1,9 @@
 @import "tailwindcss";
 @import "leaflet/dist/leaflet.css";
 
+/* Tailwind only scans apps/web by default, so shared components would lose their utility classes. */
+@source "../../../packages/ui/src";
+
 :root {
   --background: #f7f8f6;
   --surface: #ffffff;
@@ -12,6 +15,7 @@
   --emerald-dark: #075a48;
   --coral: #df664c;
   --gold: #e9a23b;
+  --danger: #c93f35;
   --shadow: 0 12px 32px rgba(22, 42, 33, 0.1);
 }
 
@@ -26,6 +30,7 @@
   --emerald-dark: #279576;
   --coral: #f08068;
   --gold: #f0b75b;
+  --danger: #ff8078;
   --shadow: 0 14px 36px rgba(0, 0, 0, 0.32);
 }
 @media (prefers-color-scheme: dark) {
@@ -40,6 +45,7 @@
     --emerald-dark: #279576;
     --coral: #f08068;
     --gold: #f0b75b;
+    --danger: #ff8078;
     --shadow: 0 14px 36px rgba(0, 0, 0, 0.32);
   }
 }
@@ -72,6 +78,8 @@ button, a { -webkit-tap-highlight-color: transparent; }
 .nav-link.active::after { content: ""; position: absolute; bottom: 0; left: .85rem; right: .85rem; height: 3px; border-radius: 3px 3px 0 0; background: var(--emerald); }
 .icon-button { display: inline-flex; min-width: 2.75rem; min-height: 2.75rem; align-items: center; justify-content: center; border: 0; border-radius: 6px; background: transparent; color: var(--text); padding: .5rem; }
 .icon-button:hover { background: var(--surface-muted); }
+/* Unlayered rules beat Tailwind utilities, so .icon-button's display would otherwise defeat lg:hidden. */
+@media (min-width: 64rem) { .icon-button.lg\:hidden { display: none; } }
 .profile-button { display: none; min-height: 2.75rem; align-items: center; gap: .5rem; border-radius: 6px; background: var(--surface-muted); padding: .5rem .75rem; font-size: .875rem; font-weight: 700; }
 .mobile-menu-backdrop { position: fixed; inset: 0; z-index: 60; background: rgba(0,0,0,.48); }
 .mobile-menu { position: absolute; right: 0; top: 0; width: min(88vw, 340px); height: 100%; overflow-y: auto; background: var(--surface); padding: 1rem; box-shadow: var(--shadow); }
@@ -139,7 +147,11 @@ button, a { -webkit-tap-highlight-color: transparent; }
 .explore-layout { display: grid; gap: 1rem; padding-bottom: 5rem; }
 .filter-panel { border: 1px solid var(--border); background: var(--surface); }
 .filter-panel-inner { display: grid; gap: 1rem; padding: 1rem; }
-.filter-group { display: grid; gap: .45rem; }
+.filter-group { display: grid; grid-template-columns: minmax(0, 1fr); gap: .45rem; min-width: 0; }
+/* Date inputs have a wide natural size and clip their text when squeezed, so a pair stacks when two no longer fit. */
+.date-range { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 9.75rem), 1fr)); gap: .5rem; }
+.date-range > * { min-width: 0; }
+.date-input { min-width: 0; }
 .filter-group label, .field-label { color: var(--muted); font-size: .73rem; font-weight: 750; text-transform: uppercase; }
 .select-input, .text-input, .date-input, .text-area { width: 100%; min-height: 2.75rem; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); color: var(--text); padding: .55rem .7rem; outline: 0; }
 .text-area { min-height: 110px; resize: vertical; }
@@ -158,6 +170,23 @@ button, a { -webkit-tap-highlight-color: transparent; }
 .form-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: .6rem; }
 .status-banner { border-left: 4px solid var(--emerald); background: color-mix(in srgb, var(--emerald) 8%, var(--surface)); padding: .8rem 1rem; font-size: .85rem; }
 .error-banner { border-left-color: #c93f35; background: color-mix(in srgb, #c93f35 9%, var(--surface)); }
+
+/* Validation UI: field wrapper, inline messages, form-level alerts. */
+.field { display: grid; gap: .4rem; min-width: 0; }
+.field-label .field-required { margin-left: .2rem; color: var(--danger); }
+.field-control { min-width: 0; }
+.field-hint { margin: 0; color: var(--muted); font-size: .75rem; line-height: 1.45; }
+.field-error { display: flex; align-items: flex-start; gap: .35rem; margin: 0; color: var(--danger); font-size: .78rem; font-weight: 650; line-height: 1.45; }
+.field-error svg { flex: none; margin-top: .1rem; }
+.char-count { display: block; margin-top: .3rem; text-align: end; color: var(--muted); font-size: .72rem; font-variant-numeric: tabular-nums; }
+.char-count.over { color: var(--danger); font-weight: 700; }
+.form-alert { display: flex; align-items: flex-start; gap: .5rem; border-left: 4px solid var(--emerald); background: color-mix(in srgb, var(--emerald) 8%, var(--surface)); padding: .75rem .9rem; font-size: .85rem; line-height: 1.5; }
+.form-alert svg { flex: none; margin-top: .12rem; }
+.form-alert-error { border-left-color: var(--danger); background: color-mix(in srgb, var(--danger) 9%, var(--surface)); color: var(--danger); font-weight: 600; }
+.form-alert-success { font-weight: 600; }
+/* Invalid controls win over the default focus ring, whatever the class ordering. */
+.select-input[aria-invalid="true"], .text-input[aria-invalid="true"], .date-input[aria-invalid="true"], .text-area[aria-invalid="true"] { border-color: var(--danger); }
+.select-input[aria-invalid="true"]:focus, .text-input[aria-invalid="true"]:focus, .date-input[aria-invalid="true"]:focus, .text-area[aria-invalid="true"]:focus { border-color: var(--danger); box-shadow: 0 0 0 3px color-mix(in srgb, var(--danger) 18%, transparent); }
 
 .detail-hero { position: relative; height: clamp(420px, 62vh, 660px); overflow: hidden; background: #24372d; color: white; }
 .detail-hero-overlay { position: absolute; inset: 0; background: linear-gradient(0deg, rgba(5,22,15,.85), rgba(5,22,15,.08) 70%); }
@@ -181,6 +210,7 @@ button, a { -webkit-tap-highlight-color: transparent; }
 .trip-list { display: grid; gap: 1rem; }
 .trip-item { border: 1px solid var(--border); border-radius: 8px; background: var(--surface); padding: 1rem; }
 .trip-item-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; }
+.trip-item-header > div:first-child { flex: 1; min-width: 0; }
 .trip-item h2 { margin: 0; font-size: 1.1rem; }
 .trip-destination { display: grid; grid-template-columns: auto 68px 1fr auto; align-items: center; gap: .7rem; min-height: 82px; border-top: 1px solid var(--border); padding-block: .65rem; }
 .trip-drag-handle { width: 2.25rem; min-height: 2.25rem; border: 0; background: transparent; color: var(--muted); cursor: grab; }

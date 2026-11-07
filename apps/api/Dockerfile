@@ -2,6 +2,8 @@ FROM oven/bun:1.3.14-alpine AS build
 WORKDIR /workspace
 COPY package.json bun.lock tsconfig.base.json ./
 COPY apps/api/package.json apps/api/package.json
+COPY apps/web/package.json apps/web/package.json
+COPY apps/worker/package.json apps/worker/package.json
 COPY packages packages
 RUN bun install --frozen-lockfile
 COPY apps/api apps/api

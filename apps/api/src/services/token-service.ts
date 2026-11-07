@@ -61,7 +61,7 @@ export class TokenService {
   async verifyOAuthState(token: string): Promise<OAuthStateClaims> {
     try {
       const { payload } = await jwtVerify(token, this.#key, { issuer: this.issuer, audience: this.audience, algorithms: ["HS256"] });
-      if (payload.kind !== "oauth_state" || (payload.provider !== "google" && payload.provider !== "facebook") || typeof payload.state !== "string" || typeof payload.nonce !== "string" || typeof payload.codeVerifier !== "string" || (payload.locale !== "en" && payload.locale !== "th") || typeof payload.returnTo !== "string") throw new Error("Invalid OAuth state claims");
+      if (payload.kind !== "oauth_state" || payload.provider !== "google" || typeof payload.state !== "string" || typeof payload.nonce !== "string" || typeof payload.codeVerifier !== "string" || (payload.locale !== "en" && payload.locale !== "th") || typeof payload.returnTo !== "string") throw new Error("Invalid OAuth state claims");
       return { provider: payload.provider, state: payload.state, nonce: payload.nonce, codeVerifier: payload.codeVerifier, locale: payload.locale, returnTo: payload.returnTo };
     } catch {
       throw new HttpError(400, "Invalid OAuth State", "The sign-in request expired or could not be verified.");

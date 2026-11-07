@@ -48,34 +48,3 @@ export class GoogleOAuthProvider implements OAuthIdentityProvider {
     if (!this.configured) throw new HttpError(503, "OAuth Not Configured", "Google sign-in is not configured on this server.");
   }
 }
-
-export class FacebookOAuthProvider implements OAuthIdentityProvider {
-  readonly provider = "facebook" as const;
-  readonly configured: boolean;
-
-  constructor(readonly clientId?: string, readonly clientSecret?: string) {
-    this.configured = Boolean(clientId && clientSecret);
-  }
-
-  async createAuthorizationRequest(redirectUri: string): Promise<OAuthAuthorizationRequest> {
-    this.#assertConfigured();
-    const state = randomUrlSafe();
-    const nonce = randomUrlSafe();
-    const codeVerifier = randomUrlSafe(64);
-    const parameters = new URLSearchParams({ client_id: this.clientId as string, redirect_uri: redirectUri, response_type: "code", scope: "email,public_profile", state, code_challenge: codeChallenge(codeVerifier), code_challenge_method: "S256" });
-    return { url: `https://www.facebook.com/v20.0/dialog/oauth?${parameters}`, state, nonce, codeVerifier };
-  }
-
-  async exchangeCode(input: { code: string; codeVerifier: string; redirectUri: string; expectedNonce: string }): Promise<OAuthIdentity> {
-    this.#assertConfigured();
-    const tokenParameters = new URLSearchParams({ client_id: this.clientId as string, client_secret: this.clientSecret as string, redirect_uri: input.redirectUri, code: input.code, code_verifier: input.codeVerifier });
-    const token = await fetchJson<{ access_token: string }>(`https://graph.facebook.com/v20.0/oauth/access_token?${tokenParameters}`);
-    const profile = await fetchJson<{ id: string; name: string; email?: string; picture?: { data?: { url?: string } } }>(`https://graph.facebook.com/me?fields=id,name,email,picture.type(large)&access_token=${encodeURIComponent(token.access_token)}`);
-    if (!profile.email) throw new HttpError(422, "Email Permission Required", "Facebook did not provide an email address. Grant email permission and try again.");
-    return { provider: "facebook", subject: profile.id, email: profile.email, displayName: profile.name, avatarUrl: profile.picture?.data?.url ?? null };
-  }
-
-  #assertConfigured(): void {
-    if (!this.configured) throw new HttpError(503, "OAuth Not Configured", "Facebook sign-in is not configured on this server.");
-  }
-}

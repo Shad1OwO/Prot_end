@@ -33,6 +33,7 @@ import {
   destinationTranslations,
   destinationTravelerTypes,
   destinations,
+  emailCredentials,
   favorites,
   featuredSlots,
   likes,
@@ -347,7 +348,29 @@ export class PostgresRepository implements AppRepository {
     return row ? this.#toUser(row) : null;
   }
 
-  async findUserByOAuth(provider: "google" | "facebook", subject: string): Promise<User | null> {
+  async findUserByEmail(email: string): Promise<User | null> {
+    const row = (await this.#connection.db.select().from(users).where(and(eq(users.email, email.trim().toLowerCase()), isNull(users.archivedAt))).limit(1))[0];
+    return row ? this.#toUser(row) : null;
+  }
+
+  async findEmailCredential(email: string): Promise<{ user: User; passwordHash: string } | null> {
+    const row = (await this.#connection.db.select({ user: users, passwordHash: emailCredentials.passwordHash }).from(emailCredentials).innerJoin(users, eq(users.id, emailCredentials.userId)).where(and(eq(users.email, email.trim().toLowerCase()), isNull(users.archivedAt))).limit(1))[0];
+    return row ? { user: this.#toUser(row.user), passwordHash: row.passwordHash } : null;
+  }
+
+  async createEmailCredential(input: { email: string; displayName: string; passwordHash: string; locale: Locale }): Promise<User> {
+    const email = input.email.trim().toLowerCase();
+    return this.#connection.db.transaction(async (tx) => {
+      if ((await tx.select({ id: users.id }).from(users).where(eq(users.email, email)).limit(1))[0]) throw new Error("EMAIL_CREDENTIAL_EXISTS");
+      const userRow = (await tx.insert(users).values({ email, displayName: input.displayName, locale: input.locale }).returning())[0];
+      if (!userRow) throw new Error("Failed to create email user");
+      await tx.insert(emailCredentials).values({ userId: userRow.id, passwordHash: input.passwordHash });
+      await tx.insert(userPreferences).values({ userId: userRow.id, locale: input.locale }).onConflictDoNothing();
+      return this.#toUser(userRow);
+    });
+  }
+
+  async findUserByOAuth(provider: "google", subject: string): Promise<User | null> {
     const row = (await this.#connection.db.select({ user: users }).from(oauthAccounts).innerJoin(users, eq(users.id, oauthAccounts.userId)).where(and(eq(oauthAccounts.provider, provider), eq(oauthAccounts.providerSubject, subject), isNull(users.archivedAt))).limit(1))[0];
     return row ? this.#toUser(row.user) : null;
   }

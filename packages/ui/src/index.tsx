@@ -9,7 +9,7 @@ import { twMerge } from "tailwind-merge";
 export const cn = (...values: ClassValue[]) => twMerge(clsx(values));
 
 export function Button({ className, type = "button", ...props }: ButtonHTMLAttributes<HTMLButtonElement>) {
-  return <button type={type} className={cn("inline-flex min-h-11 items-center justify-center gap-2 rounded-md px-4 py-2 text-sm font-semibold transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600 disabled:cursor-not-allowed disabled:opacity-50", className)} {...props} />;
+  return <button type={type} className={cn("inline-flex min-h-11 items-center justify-center gap-2 whitespace-nowrap rounded-md px-4 py-2 text-sm font-semibold transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600 disabled:cursor-not-allowed disabled:opacity-50", className)} {...props} />;
 }
 
 export function Input({ className, ...props }: InputHTMLAttributes<HTMLInputElement>) {
@@ -38,3 +38,6 @@ export function Dialog({ open, onClose, title, description, children }: { open: 
   if (!open) return null;
   return <div className="fixed inset-0 z-50 grid place-items-center bg-black/55 p-4" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}><div ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby={titleId} tabIndex={-1} className="w-full max-w-md rounded-lg border border-[var(--border)] bg-[var(--surface)] p-5 shadow-2xl outline-none"><div className="flex items-start justify-between gap-4"><div><h2 id={titleId} className="text-xl font-bold">{title}</h2>{description ? <p className="mt-1 text-sm text-[var(--muted)]">{description}</p> : null}</div><Button aria-label="Close" title="Close" className="h-10 min-h-10 w-10 p-0 hover:bg-[var(--surface-muted)]" onClick={onClose}><X size={18} /></Button></div><div className="mt-5">{children}</div></div></div>;
 }
+
+export * from "./form";
+export * from "./validation";

@@ -57,6 +57,8 @@ export const catalogApi = {
 
 export const authApi = {
   me: () => apiFetch<SessionResponse>("/api/v1/auth/me"),
+  login: (input: { email: string; password: string }) => apiFetch<SessionResponse>("/api/v1/auth/login", { method: "POST", body: JSON.stringify(input) }),
+  register: (input: { email: string; password: string; displayName: string; locale: Locale }) => apiFetch<SessionResponse>("/api/v1/auth/register", { method: "POST", body: JSON.stringify(input) }),
   developmentSession: () => apiFetch<SessionResponse>("/api/v1/auth/development-session", { method: "POST" }),
   logout: () => apiFetch<void>("/api/v1/auth/logout", { method: "POST" }),
 };
