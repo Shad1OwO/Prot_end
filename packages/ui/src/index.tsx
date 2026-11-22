@@ -27,16 +27,21 @@ export function EmptyState({ icon, title, description, action }: { icon?: ReactN
 export function Dialog({ open, onClose, title, description, children }: { open: boolean; onClose: () => void; title: string; description?: string; children: ReactNode }) {
   const titleId = useId();
   const dialogRef = useRef<HTMLDivElement>(null);
+  // Callers usually pass an inline onClose. Reading it through a ref keeps the effect below tied to `open` alone:
+  // re-running it on every render would pull focus out of whatever field the user is typing in.
+  const onCloseRef = useRef(onClose);
+  useEffect(() => { onCloseRef.current = onClose; }, [onClose]);
   useEffect(() => {
     if (!open) return;
     const previous = document.activeElement as HTMLElement | null;
-    dialogRef.current?.focus();
-    const onKeyDown = (event: KeyboardEvent) => { if (event.key === "Escape") onClose(); };
+    const dialog = dialogRef.current;
+    (dialog?.querySelector<HTMLElement>("[data-autofocus]") ?? dialog)?.focus();
+    const onKeyDown = (event: KeyboardEvent) => { if (event.key === "Escape") onCloseRef.current(); };
     document.addEventListener("keydown", onKeyDown);
     return () => { document.removeEventListener("keydown", onKeyDown); previous?.focus(); };
-  }, [open, onClose]);
+  }, [open]);
   if (!open) return null;
-  return <div className="fixed inset-0 z-50 grid place-items-center bg-black/55 p-4" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}><div ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby={titleId} tabIndex={-1} className="w-full max-w-md rounded-lg border border-[var(--border)] bg-[var(--surface)] p-5 shadow-2xl outline-none"><div className="flex items-start justify-between gap-4"><div><h2 id={titleId} className="text-xl font-bold">{title}</h2>{description ? <p className="mt-1 text-sm text-[var(--muted)]">{description}</p> : null}</div><Button aria-label="Close" title="Close" className="h-10 min-h-10 w-10 p-0 hover:bg-[var(--surface-muted)]" onClick={onClose}><X size={18} /></Button></div><div className="mt-5">{children}</div></div></div>;
+  return <div className="fixed inset-0 z-50 grid place-items-center bg-black/55 p-4" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}><div ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby={titleId} tabIndex={-1} className="max-h-[calc(100dvh-2rem)] w-full max-w-md overflow-y-auto rounded-lg border border-[var(--border)] bg-[var(--surface)] p-5 shadow-2xl outline-none"><div className="flex items-start justify-between gap-4"><div><h2 id={titleId} className="text-xl font-bold">{title}</h2>{description ? <p className="mt-1 text-sm text-[var(--muted)]">{description}</p> : null}</div><Button aria-label="Close" title="Close" className="h-10 min-h-10 w-10 p-0 hover:bg-[var(--surface-muted)]" onClick={onClose}><X size={18} /></Button></div><div className="mt-5">{children}</div></div></div>;
 }
 
 export * from "./form";
