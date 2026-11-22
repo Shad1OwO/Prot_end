@@ -140,6 +140,26 @@ Use HTTPS for the zone. TLS and compression happen at Cloudflare's edge.
 Do not add a route for `/metrics`. Prometheus reads it over the internal network, and the API answers
 404 to any `/metrics` request that arrives through a proxy.
 
+### Updating an existing deploy
+
+Nothing applies migrations automatically, so every update runs them before the new code starts:
+
+```sh
+git pull
+docker compose build --pull
+
+# apply any new migrations; already-applied ones are skipped. Do not run the seed again.
+docker compose run --rm -w /workspace/packages/db api bun src/migrate.ts
+
+# restart with the new images
+docker compose up -d
+```
+
+Migrations here only add columns, tables and indexes, so the old code keeps working while they run. If
+the update is started without them, the new API fails on queries that use the new columns: destination
+pages answer 500 and the API log shows `column ... does not exist`. Running the migrate command fixes it
+without a restart.
+
 ### Fill the worldwide catalog
 
 The seed holds only a handful of hand-written destinations. The catalog import adds about 3,800 notable places
