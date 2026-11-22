@@ -2,8 +2,8 @@
 
 ## Prerequisites
 
-- Hardened Linux host with Docker Engine, Compose v2, DNS, TLS ports 80/443, and off-host backup storage.
-- An existing Caddy container attached to an external Docker network named `caddy`.
+- Hardened Linux host with Docker Engine, Compose v2, and off-host backup storage. No inbound ports are needed; the host must reach Cloudflare outbound on port 7844 (TCP and UDP).
+- `APP_HOST`'s zone on Cloudflare, and a Cloudflare Tunnel whose token goes in `CLOUDFLARE_TUNNEL_TOKEN`. `compose.yaml` runs `cloudflared` with it.
 - PostgreSQL 17 with PostGIS 3.5 may run from `compose.yaml` or remotely. Set `DATABASE_URL` accordingly.
 - Redis 8 and S3-compatible object storage may run from Compose or remote services.
 - Google OAuth callback URL: `https://<APP_HOST>/api/v1/auth/oauth/google/callback`.
@@ -11,50 +11,30 @@
 
 ## Secrets and configuration
 
-1. Copy `.env.example` to `.env`; set production origins, remote service URLs, OAuth, Maps, AI, storage, Redis password, and `APP_HOST`.
+1. Copy `.env.example` to `.env`; set production origins, remote service URLs, OAuth, Maps, AI, storage, Redis password, `APP_HOST`, and `CLOUDFLARE_TUNNEL_TOKEN`.
 2. Generate `JWT_SECRET` and `INTERNAL_API_KEY` with at least 32 random bytes.
 3. Create `secrets/postgres_password.txt`, `secrets/minio_access_key.txt`, `secrets/minio_secret_key.txt`, and `secrets/grafana_password.txt` with mode `0600`.
 4. Do not commit `.env` or `secrets/`.
 5. The API refuses to start in production with the placeholder `JWT_SECRET` / `INTERNAL_API_KEY` from `.env.example` or without `DATABASE_URL`. An unset `NODE_ENV` counts as production; `compose.yaml` pins it to `production` regardless of `.env`.
-6. `compose.yaml` sets `CLIENT_IP_HEADER=x-forwarded-for` because Caddy overwrites that header with the address it saw. Rate limits key on it. Behind a different proxy, set it to the header that proxy controls; without a proxy leave it unset. Never name a header clients can send unfiltered.
+6. `compose.yaml` sets `CLIENT_IP_HEADER=cf-connecting-ip`: Cloudflare overwrites that header at its edge, and the tunnel is the only way in from outside. Rate limits key on it. If you publish a port or put another proxy in front of the API, that path lets clients set the header themselves, so switch to the header that proxy controls (`x-forwarded-for` for Caddy or nginx). Never name a header clients can send unfiltered.
 7. Optional: set `METRICS_TOKEN` to require `Authorization: Bearer <token>` on `/metrics`, and give Prometheus the same token. `/metrics` already answers 404 to any request that carries proxy headers.
 
 Apply migration `0003` before releasing this version: it adds `users.email_verified_at`. Signing in with Google to an address that was registered by password but never verified now removes that password and signs out its sessions (the Google identity proves ownership; the password registration did not). The owner can set a new password from the profile page.
 
-## Caddy reverse proxy
+## Cloudflare Tunnel
 
-The application does not publish host ports. Its `web` and `api` services join the external `caddy` Docker network using stable aliases. Ensure that network exists:
+The application publishes no host ports. Cloudflare terminates TLS and compresses responses at its edge; the `cloudflared` service in `compose.yaml` carries requests to `web` and `api` over the project's `edge` network, using their aliases `tourism-web` and `tourism-api`.
 
-```sh
-docker network inspect caddy >/dev/null 2>&1 || docker network create caddy
-```
+In the Cloudflare dashboard (Zero Trust > Networks > Tunnels), create a tunnel with the `cloudflared` connector and copy its token into `CLOUDFLARE_TUNNEL_TOKEN`. Then add these public hostname routes to the tunnel, in this order, with the hostname set to `APP_HOST`:
 
-Add this site to the Caddyfile used by the existing Caddy container, replacing the hostname with the value of `APP_HOST`:
+| Order | Path | Service |
+| --- | --- | --- |
+| 1 | `^/(api\|health)/` | `http://tourism-api:4520` |
+| 2 | (empty) | `http://tourism-web:3000` |
 
-```caddyfile
-travel.example.com {
-    encode zstd gzip
+Cloudflare creates the DNS record for the hostname; delete any older A or AAAA record for it. Turn on SSL/TLS > Edge Certificates > Always Use HTTPS for the zone, so plain-HTTP requests are redirected before they reach the tunnel.
 
-    handle /api/* {
-        reverse_proxy tourism-api:4520
-    }
-
-    handle /health/* {
-        reverse_proxy tourism-api:4520
-    }
-
-    handle {
-        reverse_proxy tourism-web:3000
-    }
-}
-```
-
-Keep `/metrics` private; Prometheus accesses it directly over the internal `app` network. Validate and reload the central proxy after editing its Caddyfile:
-
-```sh
-docker exec caddy caddy validate --config /etc/caddy/Caddyfile
-docker exec caddy caddy reload --config /etc/caddy/Caddyfile
-```
+Keep `/metrics` private: no route sends it to the API, and the API answers 404 to any `/metrics` request carrying a proxy header. Prometheus reads it directly over the internal `app` network.
 
 ## Release
 

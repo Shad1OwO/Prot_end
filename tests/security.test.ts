@@ -87,6 +87,13 @@ describe("rate limiting", () => {
     expect(statuses).toEqual([200, 200, 200, 200, 200, 429, 429]);
     expect((await call(app, "/health/live", { headers: { "x-forwarded-for": "8.8.8.8" } })).status).toBe(200);
   });
+  test("keys on CF-Connecting-IP and ignores X-Forwarded-For behind Cloudflare Tunnel", async () => {
+    const app = make({ RATE_LIMIT_MAX: "5", CLIENT_IP_HEADER: "cf-connecting-ip" });
+    const statuses: number[] = [];
+    for (let index = 0; index < 7; index += 1) statuses.push((await call(app, "/health/live", { headers: { "cf-connecting-ip": "9.9.9.9", "x-forwarded-for": `6.6.6.${index}` } })).status);
+    expect(statuses).toEqual([200, 200, 200, 200, 200, 429, 429]);
+    expect((await call(app, "/health/live", { headers: { "cf-connecting-ip": "8.8.8.8" } })).status).toBe(200);
+  });
   test("evicts the oldest keys instead of growing without bound", () => {
     const limiter = new FixedWindowRateLimiter(1, 60, 100);
     expect(limiter.consume("first", 1_000).allowed).toBe(true);

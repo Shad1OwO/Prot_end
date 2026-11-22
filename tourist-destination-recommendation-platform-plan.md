@@ -10,7 +10,7 @@ V1 uses Google and Facebook OAuth, a curated catalog, Google Maps routing, and a
 
 ~~~mermaid
 flowchart LR
-  Browser[Browser / Mobile Web] --> Proxy[caddy reverse proxy]
+  Browser[Browser / Mobile Web] --> Proxy[Cloudflare Tunnel / cloudflared]
   Proxy --> Web[Next.js 16 web app]
   Proxy --> API[Elysia API on Bun]
   Web --> API

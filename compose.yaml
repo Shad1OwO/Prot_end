@@ -8,7 +8,7 @@ services:
       NODE_ENV: production
       NEXT_PUBLIC_API_ORIGIN: https://${APP_HOST}
     networks:
-      caddy:
+      edge:
         aliases: [tourism-web]
       app:
     depends_on: [api]
@@ -25,10 +25,11 @@ services:
       PORT: 4520
       WEB_ORIGIN: https://${APP_HOST}
       API_ORIGIN: https://${APP_HOST}
-      # Caddy overwrites X-Forwarded-For with the address it saw; the API rate-limits on that.
-      CLIENT_IP_HEADER: x-forwarded-for
+      # Cloudflare sets CF-Connecting-IP at its edge and overwrites any value the client sent. The
+      # tunnel is the only way in from outside, so the header is trustworthy; the API rate-limits on it.
+      CLIENT_IP_HEADER: cf-connecting-ip
     networks:
-      caddy:
+      edge:
         aliases: [tourism-api]
       app:
       data:
@@ -50,6 +51,17 @@ services:
       postgres: { condition: service_healthy }
       redis: { condition: service_healthy }
       minio: { condition: service_healthy }
+    restart: unless-stopped
+
+  cloudflared:
+    image: cloudflare/cloudflared:2026.10.7
+    # The tunnel makes outbound connections to Cloudflare only; no host port is published.
+    # Public hostname routes are set on the tunnel in the Cloudflare dashboard (see deploy.md).
+    command: [tunnel, --no-autoupdate, run]
+    environment:
+      TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN:?set CLOUDFLARE_TUNNEL_TOKEN in .env}
+    networks: [edge]
+    depends_on: [web, api]
     restart: unless-stopped
 
   postgres:
@@ -129,11 +141,12 @@ secrets:
   minio_secret_key: { file: ./secrets/minio_secret_key.txt }
   grafana_password: { file: ./secrets/grafana_password.txt }
 networks:
-  caddy:
-    external: true
+  # cloudflared reaches web and api here. It is also their route to the internet: the API calls Google
+  # for OAuth, and the web server fetches from https://${APP_HOST} while rendering pages.
+  edge: {}
   app: { internal: true }
   data: { internal: true }
-  # Outbound internet only. It publishes no ports and Caddy is not attached, so nothing on it is reachable from outside.
+  # Outbound internet only. It publishes no ports and cloudflared is not attached, so nothing on it is reachable from outside.
   egress: {}
 volumes:
   postgres_data: {}
