@@ -111,6 +111,7 @@ export const tripApi = {
 };
 
 export const recommendationApi = {
-  create: (input: unknown) => apiFetch<{ job: { id: string }; statusUrl: string; eventsUrl: string }>("/api/v1/recommendations", { method: "POST", body: JSON.stringify(input) }),
+  // Queuing should take well under a second; the timeout frees the submit button if the API hangs.
+  create: (input: unknown) => apiFetch<{ job: { id: string }; statusUrl: string; eventsUrl: string }>("/api/v1/recommendations", { method: "POST", body: JSON.stringify(input), signal: AbortSignal.timeout(30_000) }),
   status: (id: string, locale: Locale) => apiFetch<RecommendationResult>(`/api/v1/recommendations/${id}${queryString({ locale })}`),
 };
