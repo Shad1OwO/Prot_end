@@ -4,9 +4,15 @@ services:
     build:
       context: .
       dockerfile: apps/web/Dockerfile
+      # Baked into the website at build time: rebuild the image (docker compose build web) after changing APP_HOST.
+      args:
+        NEXT_PUBLIC_API_ORIGIN: https://${APP_HOST:?set APP_HOST in .env, e.g. travel.example.com}
+        NEXT_PUBLIC_WEB_ORIGIN: https://${APP_HOST:?set APP_HOST in .env, e.g. travel.example.com}
     environment:
       NODE_ENV: production
-      NEXT_PUBLIC_API_ORIGIN: https://${APP_HOST}
+      # Read again at startup by next.config.ts for the Content-Security-Policy connect-src.
+      NEXT_PUBLIC_API_ORIGIN: https://${APP_HOST:?set APP_HOST in .env, e.g. travel.example.com}
+      NEXT_PUBLIC_WEB_ORIGIN: https://${APP_HOST:?set APP_HOST in .env, e.g. travel.example.com}
     networks:
       edge:
         aliases: [tourism-web]
@@ -23,8 +29,8 @@ services:
       # Set here, not in .env, so a copied .env.example can never run the API in development mode.
       NODE_ENV: production
       PORT: 4520
-      WEB_ORIGIN: https://${APP_HOST}
-      API_ORIGIN: https://${APP_HOST}
+      WEB_ORIGIN: https://${APP_HOST:?set APP_HOST in .env, e.g. travel.example.com}
+      API_ORIGIN: https://${APP_HOST:?set APP_HOST in .env, e.g. travel.example.com}
       # Cloudflare sets CF-Connecting-IP at its edge and overwrites any value the client sent. The
       # tunnel is the only way in from outside, so the header is trustworthy; the API rate-limits on it.
       CLIENT_IP_HEADER: cf-connecting-ip
@@ -74,7 +80,8 @@ services:
     volumes: [postgres_data:/var/lib/postgresql/data]
     networks: [data]
     healthcheck:
-      test: [CMD-SHELL, "pg_isready -U tourism -d tourism"]
+      # $$ defers expansion to the container, so the check always matches POSTGRES_USER and POSTGRES_DB above.
+      test: [CMD-SHELL, 'pg_isready -U "$${POSTGRES_USER}" -d "$${POSTGRES_DB}"']
       interval: 10s
       timeout: 5s
       retries: 10

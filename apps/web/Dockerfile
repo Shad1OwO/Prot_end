@@ -1,4 +1,4 @@
-FROM oven/bun:1.3.14-alpine AS dependencies
+FROM oven/bun:1.4.5-alpine AS dependencies
 WORKDIR /workspace
 COPY package.json bun.lock tsconfig.base.json ./
 COPY apps/api/package.json apps/api/package.json
@@ -11,12 +11,20 @@ COPY packages/ui/package.json packages/ui/package.json
 RUN bun install --frozen-lockfile
 
 FROM dependencies AS build
+# next build inlines NEXT_PUBLIC_* into the bundle; setting them when the container starts has no effect.
+# Without them the site would call http://localhost:4000, so refuse to build instead.
+ARG NEXT_PUBLIC_API_ORIGIN
+ARG NEXT_PUBLIC_WEB_ORIGIN
+RUN test -n "$NEXT_PUBLIC_API_ORIGIN" && test -n "$NEXT_PUBLIC_WEB_ORIGIN" \
+  || { echo "Build with --build-arg NEXT_PUBLIC_API_ORIGIN=... and NEXT_PUBLIC_WEB_ORIGIN=... (compose.yaml sets both from APP_HOST)" >&2; exit 1; }
+ENV NEXT_PUBLIC_API_ORIGIN=$NEXT_PUBLIC_API_ORIGIN \
+    NEXT_PUBLIC_WEB_ORIGIN=$NEXT_PUBLIC_WEB_ORIGIN
 COPY apps/web apps/web
 COPY packages/contracts packages/contracts
 COPY packages/ui packages/ui
 RUN bun --cwd apps/web build
 
-FROM oven/bun:1.3.14-alpine AS runtime
+FROM oven/bun:1.4.5-alpine AS runtime
 WORKDIR /workspace
 ENV NODE_ENV=production
 COPY --from=build /workspace/node_modules node_modules

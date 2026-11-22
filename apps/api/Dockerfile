@@ -1,4 +1,4 @@
-FROM oven/bun:1.3.14-alpine AS build
+FROM oven/bun:1.4.5-alpine AS build
 WORKDIR /workspace
 COPY package.json bun.lock tsconfig.base.json ./
 COPY apps/api/package.json apps/api/package.json
@@ -9,7 +9,7 @@ RUN bun install --frozen-lockfile
 COPY apps/api apps/api
 RUN bun --cwd apps/api build
 
-FROM oven/bun:1.3.14-alpine
+FROM oven/bun:1.4.5-alpine
 WORKDIR /workspace
 ENV NODE_ENV=production
 COPY --from=build /workspace/apps/api/dist apps/api/dist

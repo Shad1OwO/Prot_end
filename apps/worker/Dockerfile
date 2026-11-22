@@ -1,4 +1,4 @@
-FROM oven/bun:1.3.14-alpine AS build
+FROM oven/bun:1.4.5-alpine AS build
 WORKDIR /workspace
 COPY package.json bun.lock tsconfig.base.json ./
 COPY apps/api/package.json apps/api/package.json
@@ -10,7 +10,7 @@ COPY apps/api apps/api
 COPY apps/worker apps/worker
 RUN bun --cwd apps/worker build
 
-FROM oven/bun:1.3.14-alpine
+FROM oven/bun:1.4.5-alpine
 WORKDIR /workspace
 ENV NODE_ENV=production
 RUN apk add --no-cache vips
