@@ -106,7 +106,7 @@ CREATE TABLE "destinations" (
 	"country_id" uuid NOT NULL,
 	"province_id" uuid,
 	"city_id" uuid,
-	"coordinates" "geography(Point,4326)" NOT NULL,
+	"coordinates" geography(Point,4326) NOT NULL,
 	"address" text NOT NULL,
 	"opening_hours" text,
 	"website_url" text,
