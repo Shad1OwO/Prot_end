@@ -80,7 +80,8 @@ button, a { -webkit-tap-highlight-color: transparent; }
 .icon-button:hover { background: var(--surface-muted); }
 /* Unlayered rules beat Tailwind utilities, so .icon-button's display would otherwise defeat lg:hidden. */
 @media (min-width: 64rem) { .icon-button.lg\:hidden { display: none; } }
-.profile-button { display: none; min-height: 2.75rem; align-items: center; gap: .5rem; border-radius: 6px; background: var(--surface-muted); padding: .5rem .75rem; font-size: .875rem; font-weight: 700; }
+.profile-button { display: none; min-height: 2.75rem; align-items: center; gap: .5rem; border: 1px solid transparent; border-radius: 6px; background: var(--surface-muted); padding: .5rem .75rem; font-size: .875rem; font-weight: 700; transition: border-color .15s; }
+.profile-button:hover { border-color: var(--emerald); }
 .mobile-menu-backdrop { position: fixed; inset: 0; z-index: 60; background: rgba(0,0,0,.48); }
 .mobile-menu { position: absolute; right: 0; top: 0; width: min(88vw, 340px); height: 100%; overflow-y: auto; background: var(--surface); padding: 1rem; box-shadow: var(--shadow); }
 .mobile-menu-link { display: flex; min-height: 3rem; align-items: center; gap: .8rem; border-radius: 6px; padding: .6rem .75rem; font-weight: 700; }
@@ -100,9 +101,11 @@ button, a { -webkit-tap-highlight-color: transparent; }
 .scope-control { display: grid; grid-template-columns: 1fr 1fr; gap: .25rem; border-radius: 6px; background: #e9efeb; padding: .25rem; }
 .scope-option { min-height: 2.65rem; border: 0; border-radius: 5px; background: transparent; color: #526159; font-size: .82rem; font-weight: 750; cursor: pointer; }
 .scope-option.active { background: white; color: #075a48; box-shadow: 0 1px 5px rgba(0,0,0,.1); }
+.scope-option:not(.active):hover { background: rgba(255,255,255,.6); color: #17201c; }
 .search-field-wrap { display: flex; min-width: 0; align-items: center; gap: .6rem; padding-inline: .65rem; }
 .search-field-wrap input { min-width: 0; flex: 1; height: 2.75rem; border: 0; outline: 0; background: transparent; color: #17201c; }
-.search-submit { min-height: 2.75rem; border: 0; border-radius: 6px; background: var(--coral); color: white; padding-inline: 1rem; font-weight: 750; }
+.search-submit { min-height: 2.75rem; border: 0; border-radius: 6px; background: var(--coral); color: white; padding-inline: 1rem; font-weight: 750; cursor: pointer; transition: filter .15s; }
+.search-submit:hover { filter: brightness(.92); }
 
 .content-band { padding-block: 3.5rem; }
 .content-band.alt { background: var(--surface); }
@@ -124,6 +127,9 @@ button, a { -webkit-tap-highlight-color: transparent; }
 .card-icon-button { width: 2.35rem; min-height: 2.35rem; border: 1px solid var(--border); background: var(--surface); color: var(--muted); padding: 0; }
 .card-icon-button.active { border-color: var(--emerald); color: var(--emerald); }
 .card-icon-button.liked { border-color: var(--coral); color: var(--coral); }
+.card-icon-button:hover { background: var(--surface-muted); color: var(--text); }
+.card-icon-button.active:hover { color: var(--emerald); }
+.card-icon-button.liked:hover { color: var(--coral); }
 .destination-description { display: -webkit-box; min-height: 2.8rem; margin: .8rem 0; overflow: hidden; color: var(--muted); font-size: .82rem; line-height: 1.55; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
 .card-metrics { display: flex; flex-wrap: wrap; gap: .55rem .8rem; color: var(--muted); font-size: .72rem; }
 .card-metrics span { display: inline-flex; align-items: center; gap: .25rem; }
@@ -143,6 +149,8 @@ button, a { -webkit-tap-highlight-color: transparent; }
 .page-header p { max-width: 650px; margin: .8rem 0 0; color: var(--muted); line-height: 1.7; }
 .toolbar { display: flex; flex-wrap: wrap; gap: .65rem; }
 .filter-chip { display: inline-flex; min-height: 2.6rem; align-items: center; gap: .4rem; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); padding: .5rem .75rem; font-size: .8rem; font-weight: 700; }
+.filter-chip { cursor: pointer; transition: border-color .15s, background-color .15s; }
+.filter-chip:hover { border-color: var(--emerald); }
 .filter-chip.active { border-color: var(--emerald); background: color-mix(in srgb, var(--emerald) 9%, var(--surface)); color: var(--emerald); }
 .explore-layout { display: grid; gap: 1rem; padding-bottom: 5rem; }
 .filter-panel { border: 1px solid var(--border); background: var(--surface); }
@@ -211,9 +219,17 @@ button, a { -webkit-tap-highlight-color: transparent; }
 .trip-item { border: 1px solid var(--border); border-radius: 8px; background: var(--surface); padding: 1rem; }
 .trip-item-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; }
 .trip-item-header > div:first-child { flex: 1; min-width: 0; }
+/* `input { font: inherit }` above is unlayered, so a Tailwind font-bold on the input would lose to it. */
+.trip-name-input { font-size: 1.05rem; font-weight: 750; }
+.trips-header { display: flex; flex-direction: column; align-items: flex-start; gap: 1rem; }
+.trip-itinerary-bar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .75rem; margin-top: 1rem; }
+.danger-icon-button { color: var(--danger); }
+.danger-icon-button:hover { background: color-mix(in srgb, var(--danger) 12%, transparent); }
 .trip-item h2 { margin: 0; font-size: 1.1rem; }
 .trip-destination { display: grid; grid-template-columns: auto 68px 1fr auto; align-items: center; gap: .7rem; min-height: 82px; border-top: 1px solid var(--border); padding-block: .65rem; }
-.trip-drag-handle { width: 2.25rem; min-height: 2.25rem; border: 0; background: transparent; color: var(--muted); cursor: grab; }
+.trip-drag-handle { display: grid; width: 2.25rem; min-height: 2.25rem; place-items: center; border: 0; border-radius: 6px; background: transparent; color: var(--muted); cursor: grab; touch-action: none; }
+.trip-drag-handle:hover { background: var(--surface-muted); color: var(--text); }
+.trip-drag-handle:active { cursor: grabbing; }
 .ai-progress { height: .5rem; overflow: hidden; border-radius: 4px; background: var(--surface-muted); }
 .ai-progress-fill { height: 100%; background: var(--emerald); transition: width .35s ease; }
 .ai-result { display: grid; gap: 1rem; border-bottom: 1px solid var(--border); padding-block: 1.2rem; }
@@ -224,6 +240,13 @@ button, a { -webkit-tap-highlight-color: transparent; }
   .category-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .results-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .profile-button { display: inline-flex; }
+  .trips-header { flex-direction: row; align-items: flex-end; justify-content: space-between; }
+  .trips-header > button { flex: none; }
+}
+
+@media (max-width: 420px) {
+  .trip-item { padding: .85rem; }
+  .trip-destination { grid-template-columns: auto 52px minmax(0, 1fr) auto; gap: .5rem; }
 }
 
 @media (min-width: 900px) {
