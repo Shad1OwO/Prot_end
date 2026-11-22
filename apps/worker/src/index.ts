@@ -3,7 +3,7 @@ import { recommendationFailedMessage } from "@tourism/contracts";
 import { PostgresRepository } from "@tourism/api/postgres-repository";
 import { Worker } from "bullmq";
 import { AiProviderRouter } from "./providers/ai";
-import { GoogleMapsRoutingProvider } from "./providers/maps";
+import { filterByDrivingDistance, GoogleMapsRoutingProvider } from "./providers/maps";
 
 const env = getWorkerEnvironment();
 if (!env.DATABASE_URL || !env.REDIS_URL) throw new Error("DATABASE_URL and REDIS_URL are required for the worker");
@@ -20,10 +20,9 @@ const worker = new Worker("recommendations", async (queueJob) => {
     await repository.updateJob(jobId, { status: "filtering", progress: 20, statusMessage: "Filtering curated destinations", error: null });
     let candidates = await repository.shortlist(stored.request, 20);
     await repository.updateJob(jobId, { status: "routing", progress: 50, statusMessage: "Checking route eligibility", error: null });
-    if (stored.request.filters.origin && maps.configured) {
-      const routes = await maps.estimate(stored.request.filters.origin, candidates.slice(0, 12));
-      if (stored.request.filters.maxDistanceKm) { const allowed = new Set(routes.filter((route) => route.distanceKm !== null && route.distanceKm <= (stored.request.filters.maxDistanceKm as number)).map((route) => route.destinationId)); candidates = candidates.filter((item) => allowed.has(item.id)); }
-    }
+    const routed = await filterByDrivingDistance(maps, stored.request.filters.origin, candidates, stored.request.filters.maxDistanceKm);
+    if (routed.error) console.warn(JSON.stringify({ level: "warn", message: "route_check_skipped", jobId, error: routed.error }));
+    candidates = routed.candidates;
     await repository.updateJob(jobId, { status: "ranking", progress: 75, statusMessage: "Ranking catalog matches", error: null });
     const ranked = await ai.rank(stored.request, candidates.slice(0, 12));
     await repository.saveResult(jobId, ranked.response, ranked.provider, ranked.fallback);
