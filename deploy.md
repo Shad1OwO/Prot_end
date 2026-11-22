@@ -89,24 +89,19 @@ The API refuses to start in production if `JWT_SECRET` or `INTERNAL_API_KEY` sti
 | `HISTORY_RETENTION_DAYS` | 90 | How long opted-in AI search history is kept. |
 | `MEDIA_CLAMAV_HOST`, `MEDIA_CLAMAV_PORT` | `clamav`, 3310 | Virus scanner address. |
 
-## 5. Fix before the first deploy
+## 5. Before the first deploy
 
-These are problems in the repo as it stands. Each one breaks something in production.
-
-1. **The website will call `http://localhost:4000`.** `NEXT_PUBLIC_API_ORIGIN` is set at runtime in
-   `compose.yaml`, but Next.js bakes `NEXT_PUBLIC_*` values in at build time and `apps/web/Dockerfile`
-   does not pass any. Add build arguments for `NEXT_PUBLIC_API_ORIGIN` and `NEXT_PUBLIC_WEB_ORIGIN`
-   (both `https://<APP_HOST>`) to the Dockerfile's build stage and to the `web` service's `build:` block.
-   `NEXT_PUBLIC_WEB_ORIGIN` is not set anywhere today, so page metadata and the sitemap also point at localhost.
-2. **Fill in the secret files** listed in section 3.
-3. **Create the storage bucket** named in `S3_BUCKET`.
+1. **Fill in the secret files** listed in section 3.
+2. **Create the storage bucket** named in `S3_BUCKET`.
+3. **Build the website after setting `APP_HOST`.** Next.js bakes `NEXT_PUBLIC_API_ORIGIN` and
+   `NEXT_PUBLIC_WEB_ORIGIN` into the website when the image is built; `compose.yaml` passes both as build
+   arguments from `APP_HOST`. If you change `APP_HOST`, run `docker compose build web` again: restarting
+   the container is not enough. A website still calling `http://localhost:4000` was built without them.
 
 The API listens on port 4520 (`PORT` in `compose.yaml`). The tunnel route and Prometheus must use that
 port; if you change it, change `ops/prometheus.yml` and the tunnel's route with it.
 
-Smaller items that do not block a deploy: the Postgres healthcheck probes user and database `tourism`
-instead of `travelncz` / `travelapp` (it still passes, but logs failed connections), and Grafana and
-Prometheus are on an internal network, so reaching their UIs needs an SSH tunnel (or a tunnel route
+A smaller item that does not block a deploy: Grafana and Prometheus are on an internal network, so reaching their UIs needs an SSH tunnel (or a tunnel route
 protected by Cloudflare Access, after attaching them to the `edge` network).
 
 ## 6. Deploy
