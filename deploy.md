@@ -12,9 +12,9 @@ backup and rollback procedure is in [DEPLOYMENT.md](DEPLOYMENT.md).
 | Need | Detail |
 | --- | --- |
 | Linux server | Docker Engine with Compose v2. Plan for 4 GB RAM or more; ClamAV is the largest consumer (estimate, not measured). |
-| Domain name | A DNS record pointing your hostname (`APP_HOST`) at the server. |
-| Open ports | 80 and 443 to the server, for Caddy and its automatic TLS certificates. Nothing else is published. |
-| Caddy | A Caddy container attached to an external Docker network named `caddy`. This repo does not start Caddy. |
+| Domain name | Your hostname (`APP_HOST`) in a zone on Cloudflare. The tunnel creates its DNS record. |
+| Open ports | None inbound: close 80 and 443. The server needs outbound access to Cloudflare on port 7844 (TCP and UDP). |
+| Cloudflare Tunnel | A tunnel created in the Cloudflare dashboard (Zero Trust > Networks > Tunnels). `compose.yaml` runs `cloudflared` with its token; routes are set in section 6. |
 | PostgreSQL 17 + PostGIS 3.5 | From `compose.yaml`, or a remote database. The first migration runs `CREATE EXTENSION postgis`, so the database user must be allowed to do that. |
 | Redis 8 | From `compose.yaml`, or remote. Used for the recommendation job queue. |
 | S3-compatible storage | MinIO from `compose.yaml`, or a remote service (R2, S3). Create the bucket yourself; nothing in the repo creates it. |
@@ -55,6 +55,7 @@ In this checkout `postgres_password.txt` and `grafana_password.txt` are empty an
 | Variable | Value |
 | --- | --- |
 | `APP_HOST` | Your hostname, without `https://`. Compose derives `WEB_ORIGIN` and `API_ORIGIN` for the API from it. |
+| `CLOUDFLARE_TUNNEL_TOKEN` | The tunnel's token. Compose refuses to start without it. |
 | `JWT_SECRET` | At least 32 random characters, e.g. `openssl rand -base64 48`. |
 | `INTERNAL_API_KEY` | A second random value. It authorises catalog imports and upload tickets. |
 | `DATABASE_URL` | Bundled Postgres: `postgres://travelncz:<postgres_password>@postgres:5432/travelapp`. |
@@ -80,7 +81,7 @@ The API refuses to start in production if `JWT_SECRET` or `INTERNAL_API_KEY` sti
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `CLIENT_IP_HEADER` | `x-forwarded-for` (set in `compose.yaml`) | Header your proxy writes the client address into. Correct for Caddy on its own. With Cloudflare in front of Caddy, either configure Caddy's `trusted_proxies` or restrict the origin to Cloudflare and use `cf-connecting-ip`. |
+| `CLIENT_IP_HEADER` | `cf-connecting-ip` (set in `compose.yaml`) | Header your proxy writes the client address into. Cloudflare overwrites `CF-Connecting-IP`, and the tunnel is the only way in, so clients cannot forge it. If you ever publish a port or add another proxy in front of the API, switch to the header that proxy controls (`x-forwarded-for` for Caddy or nginx). |
 | `RATE_LIMIT_MAX`, `RATE_LIMIT_WINDOW_SECONDS` | 120 per 60 s | General request limit per signed-in user or per address. |
 | `AUTH_RATE_LIMIT_MAX` | 10 | Sign-in, registration and password attempts per address per window. |
 | `METRICS_TOKEN` | unset | When set, `/metrics` requires `Authorization: Bearer <token>`; give Prometheus the same token. |
@@ -100,19 +101,17 @@ These are problems in the repo as it stands. Each one breaks something in produc
 2. **Fill in the secret files** listed in section 3.
 3. **Create the storage bucket** named in `S3_BUCKET`.
 
-The API listens on port 4520 (`PORT` in `compose.yaml`). Caddy and Prometheus must use that port; if
-you change it, change `ops/prometheus.yml` and your Caddyfile with it.
+The API listens on port 4520 (`PORT` in `compose.yaml`). The tunnel route and Prometheus must use that
+port; if you change it, change `ops/prometheus.yml` and the tunnel's route with it.
 
 Smaller items that do not block a deploy: the Postgres healthcheck probes user and database `tourism`
 instead of `travelncz` / `travelapp` (it still passes, but logs failed connections), and Grafana and
-Prometheus are on an internal network, so reaching their UIs needs a Caddy route or an SSH tunnel.
+Prometheus are on an internal network, so reaching their UIs needs an SSH tunnel (or a tunnel route
+protected by Cloudflare Access, after attaching them to the `edge` network).
 
 ## 6. Deploy
 
 ```sh
-# once per server
-docker network inspect caddy >/dev/null 2>&1 || docker network create caddy
-
 # build and start the data services
 docker compose build --pull
 docker compose up -d postgres redis minio
@@ -129,16 +128,16 @@ With a remote database you can instead run `bun run db:migrate` and `bun run db:
 that has Bun, the repo, and `DATABASE_URL` set. The bundled Postgres is not reachable from the host,
 which is why the commands above run inside the `api` image.
 
-Add the site to your Caddyfile and reload Caddy:
+On the tunnel in the Cloudflare dashboard, add two public hostname routes for `APP_HOST`, in this order
+(the first match wins):
 
-```caddyfile
-travel.example.com {
-    encode zstd gzip
-    handle /api/*    { reverse_proxy tourism-api:4520 }
-    handle /health/* { reverse_proxy tourism-api:4520 }
-    handle           { reverse_proxy tourism-web:3000 }
-}
-```
+| Order | Path | Service |
+| --- | --- | --- |
+| 1 | `^/(api\|health)/` | `http://tourism-api:4520` |
+| 2 | (empty) | `http://tourism-web:3000` |
+
+Delete any older A or AAAA record for the hostname, and turn on SSL/TLS > Edge Certificates > Always
+Use HTTPS for the zone. TLS and compression happen at Cloudflare's edge.
 
 Do not add a route for `/metrics`. Prometheus reads it over the internal network, and the API answers
 404 to any `/metrics` request that arrives through a proxy.
@@ -147,6 +146,7 @@ Do not add a route for `/metrics`. Prometheus reads it over the internal network
 
 ```sh
 docker compose ps                                   # every service "running" or "healthy"
+docker compose logs cloudflared | grep -i registered   # the tunnel has connections to Cloudflare
 curl -fsS https://$APP_HOST/health/ready            # {"status":"ready","database":"remote","queue":"redis"}
 curl -fsS "https://$APP_HOST/api/v1/destinations?locale=en&scope=thailand&limit=1"
 curl -s -o /dev/null -w '%{http_code}\n' https://$APP_HOST/metrics   # expect 404
