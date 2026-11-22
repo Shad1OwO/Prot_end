@@ -350,3 +350,19 @@ describe("recommendations", () => {
     await afterClosing.body?.cancel();
   });
 });
+
+describe("error logging", () => {
+  test("logs the database's reason for a failed query, not the query's values", async () => {
+    const driverError = Object.assign(new Error('relation "categories" does not exist'), { code: "42P01" });
+    const wrapped = new Error("Failed query: select ... where email = $1\nparams: person@example.com", { cause: driverError });
+    const repository = new InMemoryRepository();
+    repository.categories = async () => { throw wrapped; };
+    const logged: string[] = [];
+    spyOn(console, "error").mockImplementation((line: unknown) => { logged.push(String(line)); });
+    const response = await call(make({}, { repository }), "/api/v1/categories?locale=en");
+    expect(response.status).toBe(500);
+    const entry = JSON.parse(logged.find((line) => line.includes("request_failed")) ?? "{}");
+    expect(entry.error).toBe('relation "categories" does not exist (42P01)');
+    expect(logged.join("\n")).not.toContain("person@example.com");
+  });
+});

@@ -74,6 +74,18 @@ const metricMethods = new Set(["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", 
 const proxyHeaders = ["x-forwarded-for", "x-forwarded-host", "forwarded", "cf-connecting-ip"];
 const maxProgressStreamsPerUser = 2;
 
+/**
+ * What to log for an unexpected error. Drizzle wraps driver errors as "Failed query: <sql> params: <values>":
+ * the reason is only in `cause`, and the values can be personal data (an email address on sign-in), so a
+ * wrapped error is logged as its cause's message and Postgres error code instead.
+ */
+export function describeError(error: unknown): string {
+  if (!(error instanceof Error)) return String(error);
+  if (!(error.cause instanceof Error)) return error.message;
+  const code = (error.cause as { code?: unknown }).code;
+  return typeof code === "string" ? `${error.cause.message} (${code})` : error.cause.message;
+}
+
 function sseEvent(event: string, data: unknown): string {
   return `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
 }
@@ -159,7 +171,7 @@ export function createApplication(options: CreateApplicationOptions = {}): Touri
       const problem = problemFromError(normalizedError, requestId, url.pathname);
       set.status = problem.status;
       set.headers["content-type"] = "application/problem+json";
-      if (problem.status >= 500) console.error(JSON.stringify({ level: "error", message: "request_failed", requestId, method: request.method, path: url.pathname, error: error instanceof Error ? error.message : String(error) }));
+      if (problem.status >= 500) console.error(JSON.stringify({ level: "error", message: "request_failed", requestId, method: request.method, path: url.pathname, error: describeError(error) }));
       return problem;
     })
     .get("/health/live", () => ({ status: "ok", uptimeSeconds: Math.floor(process.uptime()) }))
