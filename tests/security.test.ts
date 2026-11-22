@@ -116,7 +116,8 @@ describe("rate limiting", () => {
     for (let index = 0; index < 10; index += 1) expect((await login(app, "target@example.com", "guess number " + index, { "x-forwarded-for": `7.7.7.${index}` })).status).toBe(401);
     expect((await login(app, "target@example.com", "the real password", { "x-forwarded-for": "7.7.7.200" })).status).toBe(429);
     expect((await login(app, "bystander@example.com", "another password", { "x-forwarded-for": "7.7.7.201" })).status).toBe(200);
-  });
+    // 14 argon2 hashes: about 4 s on an idle machine, so the default 5 s limit fails it under load.
+  }, 30_000);
   test("gives each signed-in user their own budget so people behind one address do not block each other", async () => {
     const app = make({ RATE_LIMIT_MAX: "5" });
     const first = await register(app, "first@example.com");
