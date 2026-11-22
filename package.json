@@ -11,7 +11,7 @@
     "dev:worker": "bun --cwd apps/worker dev",
     "build": "bun run --filter './packages/*' build && bun run --filter './apps/*' build",
     "typecheck": "bun run --filter '*' typecheck",
-    "test": "bun test tests/contracts.test.ts tests/api.test.ts apps/api/src/http/body-limit.test.ts apps/worker/src/media.test.ts packages/ui/src/validation.test.ts",
+    "test": "bun test tests/contracts.test.ts tests/api.test.ts tests/security.test.ts tests/web-config.test.ts apps/api/src/http/body-limit.test.ts apps/worker/src/media.test.ts packages/ui/src/validation.test.ts",
     "test:e2e": "playwright test",
     "lint": "bun run --filter './apps/web' lint",
     "db:generate": "bun --cwd packages/db generate",

@@ -6,6 +6,7 @@ import {
   localeSchema,
   mediaUploadRequestSchema,
   oauthProviderSchema,
+  passwordChangeSchema,
   preferencesUpdateSchema,
   profilePatchSchema,
   uuidSchema,
@@ -27,7 +28,7 @@ import { PostgresRepository } from "./infrastructure/postgres-repository";
 import { InlineRecommendationQueue, RedisRecommendationQueue } from "./infrastructure/recommendation-queue";
 import { MetricsRegistry } from "./observability/metrics";
 import { FixedWindowRateLimiter } from "./security/rate-limit";
-import { securityHeaders, verifyWriteRequest } from "./security/request-security";
+import { clientAddress, securityHeaders, verifyWriteRequest } from "./security/request-security";
 import { CatalogService } from "./services/catalog-service";
 import { issueDevelopmentSession } from "./services/development-auth";
 import { EmailAuthService } from "./services/email-auth-service";
@@ -66,9 +67,12 @@ function setCookies(headers: Record<string, string | string[] | number | undefin
   headers["set-cookie"] = values;
 }
 
-function requestIp(request: Request): string {
-  return request.headers.get("cf-connecting-ip") ?? request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "local";
-}
+/** Endpoints that check a password: each attempt costs an argon2 hash and is a guess at a credential. */
+const credentialPaths = new Set(["/api/v1/auth/login", "/api/v1/auth/register", "/api/v1/auth/password"]);
+const metricMethods = new Set(["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"]);
+/** Headers a reverse proxy adds. Their presence on `/metrics` means the request came from outside. */
+const proxyHeaders = ["x-forwarded-for", "x-forwarded-host", "forwarded", "cf-connecting-ip"];
+const maxProgressStreamsPerUser = 2;
 
 function sseEvent(event: string, data: unknown): string {
   return `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
@@ -88,6 +92,8 @@ export function createApplication(options: CreateApplicationOptions = {}): Touri
   };
   const oauth = new OAuthService(repository, sessions, tokens, oauthProviders, env);
   const emailAuth = new EmailAuthService(repository, sessions);
+  const authLimiter = new FixedWindowRateLimiter(env.AUTH_RATE_LIMIT_MAX, env.RATE_LIMIT_WINDOW_SECONDS);
+  const progressStreams = new Map<string, number>();
   const catalog = new CatalogController(new CatalogService(repository));
   const profile = new ProfileController(new ProfileService(repository));
   const social = new SocialService(repository);
@@ -105,31 +111,37 @@ export function createApplication(options: CreateApplicationOptions = {}): Touri
       exposeHeaders: ["x-request-id", "ratelimit-remaining", "ratelimit-reset"],
       maxAge: 600,
     }))
-    .onRequest(({ request, set }) => {
+    .onRequest(async ({ request, set, server }) => {
       const requestId = request.headers.get("x-request-id")?.slice(0, 128) || crypto.randomUUID();
       telemetry.set(request, { requestId, startedAt: performance.now() });
       set.headers["x-request-id"] = requestId;
       for (const [name, value] of Object.entries(securityHeaders)) set.headers[name] = value;
-      const limit = limiter.consume(requestIp(request));
+      const address = clientAddress(request, env.CLIENT_IP_HEADER, server?.requestIP(request)?.address);
+      const pathname = new URL(request.url).pathname;
+      // Signed-in users are limited per account, so people sharing one address (an office, a mobile carrier) do not exhaust each other's budget.
+      const limit = limiter.consume(await rateLimitKey(request, address));
       set.headers["ratelimit-remaining"] = String(limit.remaining);
       set.headers["ratelimit-reset"] = String(limit.resetSeconds);
-      if (!limit.allowed) {
-        set.headers["retry-after"] = String(limit.resetSeconds);
+      const credentialLimit = request.method === "POST" && credentialPaths.has(pathname) ? authLimiter.consume(`ip:${address}`) : undefined;
+      const exceeded = !limit.allowed ? limit : credentialLimit && !credentialLimit.allowed ? credentialLimit : undefined;
+      if (exceeded) {
+        set.headers["retry-after"] = String(exceeded.resetSeconds);
         throw new HttpError(429, "Too Many Requests", "The request limit was exceeded. Retry after the indicated delay.");
       }
       const internalKey = request.headers.get("x-internal-api-key");
       const validInternalRequest = Boolean(internalKey && tokens.equal(internalKey, env.INTERNAL_API_KEY));
       if (!validInternalRequest) verifyWriteRequest(request, env.WEB_ORIGIN);
-      const isCatalogImport = validInternalRequest && new URL(request.url).pathname === "/api/v1/internal/catalog/imports";
+      const isCatalogImport = validInternalRequest && pathname === "/api/v1/internal/catalog/imports";
       if (!isCatalogImport) assertRequestBodyWithinLimit(request);
     })
-    .onAfterResponse(({ request, set }) => {
+    .onAfterResponse(({ request, set, route }) => {
       const current = telemetry.get(request);
       if (!current) return;
       const durationMs = performance.now() - current.startedAt;
       const url = new URL(request.url);
       const status = statusCode(set.status);
-      metrics.observe(request.method, url.pathname, status, durationMs);
+      // Label with the route template only. Raw paths are attacker-chosen and each new one would be kept forever.
+      metrics.observe(metricMethods.has(request.method) ? request.method : "OTHER", routeTemplates.has(route) ? route : "unmatched", status, durationMs);
       console.info(JSON.stringify({ level: "info", message: "request_complete", requestId: current.requestId, method: request.method, path: url.pathname, status, durationMs: Number(durationMs.toFixed(2)) }));
       telemetry.delete(request);
     })
@@ -156,7 +168,13 @@ export function createApplication(options: CreateApplicationOptions = {}): Touri
       set.headers["cache-control"] = "no-store";
       return { status: "ready", database: env.DATABASE_URL ? "remote" : "memory", queue: env.REDIS_URL ? "redis" : "inline" };
     })
-    .get("/metrics", ({ set }) => {
+    .get("/metrics", ({ request, set }) => {
+      // Prometheus scrapes this directly over the internal network. A request carrying proxy headers came through the public proxy.
+      if (proxyHeaders.some((name) => request.headers.has(name))) throw new HttpError(404, "Not Found", "The requested resource does not exist.");
+      if (env.METRICS_TOKEN) {
+        const authorization = request.headers.get("authorization") ?? "";
+        if (!authorization.startsWith("Bearer ") || !tokens.equal(authorization.slice(7), env.METRICS_TOKEN)) throw new HttpError(401, "Unauthorized", "A valid metrics token is required.");
+      }
       set.headers["content-type"] = "text/plain; version=0.0.4; charset=utf-8";
       return metrics.render();
     })
@@ -227,6 +245,13 @@ export function createApplication(options: CreateApplicationOptions = {}): Touri
       const issued = await sessions.rotate(refreshToken);
       setCookies(set.headers, issued.cookies);
       return issued.response;
+    })
+    .post("/api/v1/auth/password", async ({ request, body, set }) => {
+      const auth = await sessions.authenticate(request);
+      if (!auth) throw new HttpError(401, "Unauthorized", "Sign in is required for this action.");
+      await emailAuth.changePassword(auth.user, auth.claims.sessionId, parseInput(passwordChangeSchema, body));
+      set.status = 204;
+      return null;
     })
     .post("/api/v1/auth/logout", async ({ request, set }) => {
       setCookies(set.headers, await sessions.logout(request));
@@ -327,27 +352,61 @@ export function createApplication(options: CreateApplicationOptions = {}): Touri
       const jobId = parseInput(uuidSchema, params.id);
       const locale = parseInput(localeSchema, query.locale ?? "en");
       await recommendations.status(userId, jobId, { locale });
+      const active = progressStreams.get(userId) ?? 0;
+      if (active >= maxProgressStreamsPerUser) throw new HttpError(429, "Too Many Streams", "Close another recommendation progress stream before opening a new one.");
+      progressStreams.set(userId, active + 1);
+      let released = false;
+      const release = () => {
+        if (released) return;
+        released = true;
+        const remaining = (progressStreams.get(userId) ?? 1) - 1;
+        if (remaining > 0) progressStreams.set(userId, remaining); else progressStreams.delete(userId);
+      };
       set.headers["content-type"] = "text/event-stream; charset=utf-8";
       set.headers["cache-control"] = "no-cache, no-transform";
       set.headers.connection = "keep-alive";
       const encoder = new TextEncoder();
       return new ReadableStream<Uint8Array>({
         async start(controller) {
-          for (let attempt = 0; attempt < 120 && !request.signal.aborted; attempt += 1) {
-            const status = await recommendations.status(userId, jobId, { locale });
-            controller.enqueue(encoder.encode(sseEvent("progress", status)));
-            if (status.job.status === "completed" || status.job.status === "failed") {
-              controller.enqueue(encoder.encode(sseEvent(status.job.status, status)));
-              controller.close();
-              return;
+          try {
+            // One status read a second for at most a minute; the stream ends as soon as the job does.
+            for (let attempt = 0; attempt < 60 && !released && !request.signal.aborted; attempt += 1) {
+              const status = await recommendations.status(userId, jobId, { locale });
+              if (released) return;
+              controller.enqueue(encoder.encode(sseEvent("progress", status)));
+              if (status.job.status === "completed" || status.job.status === "failed") {
+                controller.enqueue(encoder.encode(sseEvent(status.job.status, status)));
+                controller.close();
+                return;
+              }
+              await Bun.sleep(1_000);
             }
-            await Bun.sleep(500);
+            if (released) return;
+            controller.enqueue(encoder.encode(sseEvent("timeout", { jobId })));
+            controller.close();
+          } catch (error) {
+            if (!released) controller.error(error);
+          } finally {
+            release();
           }
-          controller.enqueue(encoder.encode(sseEvent("timeout", { jobId })));
-          controller.close();
+        },
+        cancel() {
+          release();
         },
       });
     });
+
+  const routeTemplates = new Set(app.routes.map((route) => route.path));
+
+  async function rateLimitKey(request: Request, address: string): Promise<string> {
+    const token = sessions.accessTokenFrom(request);
+    if (!token) return `ip:${address}`;
+    try {
+      return `user:${(await tokens.verifyAccessToken(token)).userId}`;
+    } catch {
+      return `ip:${address}`;
+    }
+  }
 
   return {
     app,

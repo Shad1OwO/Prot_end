@@ -11,6 +11,9 @@ export const emailRegistrationSchema = emailLoginSchema.extend({
   displayName: z.string().trim().min(2).max(80),
   locale: localeSchema,
 });
+/** `currentPassword` is required whenever the account already has a password. */
+export const passwordChangeSchema = z.object({ currentPassword: z.string().min(1).max(128).optional(), newPassword: z.string().min(8).max(128) });
+export type PasswordChange = z.infer<typeof passwordChangeSchema>;
 export type EmailLogin = z.infer<typeof emailLoginSchema>;
 export type EmailRegistration = z.infer<typeof emailRegistrationSchema>;
 export const userSchema = z.object({ id: uuidSchema, email: z.email(), displayName: z.string().min(1), avatarUrl: z.url().nullable(), locale: localeSchema, createdAt: z.iso.datetime({ offset: true }) });

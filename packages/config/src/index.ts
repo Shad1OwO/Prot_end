@@ -2,17 +2,23 @@ import { z } from "zod";
 
 const booleanString = z.enum(["true", "false"]).default("false").transform((value) => value === "true");
 const sharedSchema = z.object({
-  NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
+  // Unset means production: a deployment that forgets NODE_ENV must not get development behaviour.
+  NODE_ENV: z.enum(["development", "test", "production"]).default("production"),
   WEB_ORIGIN: z.url().default("http://localhost:3000"),
   API_ORIGIN: z.url().default("http://localhost:4000"),
 });
+
+const developmentJwtSecret = "development-only-secret-change-me-now";
+const developmentInternalKey = "development-internal-key";
+/** Matches the built-in development values and the placeholders shipped in `.env.example`. */
+const isPlaceholderSecret = (value: string) => /^(development-|replace-)/i.test(value);
 
 export const apiEnvironmentSchema = sharedSchema.extend({
   PORT: z.coerce.number().int().min(1).max(65_535).default(4000),
   DATABASE_URL: z.string().min(1).optional(),
   REDIS_URL: z.string().min(1).optional(),
-  JWT_SECRET: z.string().min(32).default("development-only-secret-change-me-now"),
-  INTERNAL_API_KEY: z.string().min(16).default("development-internal-key"),
+  JWT_SECRET: z.string().min(32).default(developmentJwtSecret),
+  INTERNAL_API_KEY: z.string().min(16).default(developmentInternalKey),
   GOOGLE_CLIENT_ID: z.string().optional(),
   GOOGLE_CLIENT_SECRET: z.string().optional(),
   S3_ENDPOINT: z.url().default("http://localhost:9000"),
@@ -23,6 +29,20 @@ export const apiEnvironmentSchema = sharedSchema.extend({
   S3_FORCE_PATH_STYLE: booleanString,
   RATE_LIMIT_MAX: z.coerce.number().int().positive().default(120),
   RATE_LIMIT_WINDOW_SECONDS: z.coerce.number().int().positive().default(60),
+  /** Sign-in, registration and password attempts allowed per client per window. */
+  AUTH_RATE_LIMIT_MAX: z.coerce.number().int().positive().default(10),
+  /**
+   * Header the reverse proxy in front of the API writes the client address into.
+   * Leave unset when the API is reached directly; never set it to a header clients can send themselves.
+   */
+  CLIENT_IP_HEADER: z.enum(["x-forwarded-for", "cf-connecting-ip"]).optional(),
+  /** When set, `/metrics` requires `Authorization: Bearer <token>`. */
+  METRICS_TOKEN: z.string().min(16).optional(),
+}).superRefine((env, context) => {
+  if (env.NODE_ENV !== "production") return;
+  if (isPlaceholderSecret(env.JWT_SECRET)) context.addIssue({ code: "custom", path: ["JWT_SECRET"], message: "JWT_SECRET must be set to a random secret in production (set NODE_ENV=development for local work)." });
+  if (isPlaceholderSecret(env.INTERNAL_API_KEY)) context.addIssue({ code: "custom", path: ["INTERNAL_API_KEY"], message: "INTERNAL_API_KEY must be set to a random secret in production." });
+  if (!env.DATABASE_URL) context.addIssue({ code: "custom", path: ["DATABASE_URL"], message: "DATABASE_URL is required in production; the in-memory store loses all data on restart." });
 });
 
 export const workerEnvironmentSchema = sharedSchema.extend({

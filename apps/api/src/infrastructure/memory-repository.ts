@@ -28,6 +28,8 @@ import type {
 interface MemoryUserState {
   user: User;
   preferences: UserPreferences;
+  /** True once an identity provider has vouched for the address. Password sign-up alone never sets it. */
+  emailVerified: boolean;
 }
 
 interface MemoryTripState {
@@ -76,8 +78,12 @@ function encodeCursor(index: number): string {
 
 function decodeCursor(cursor?: string): number {
   if (!cursor) return 0;
-  const parsed = Number(atob(cursor));
-  return Number.isSafeInteger(parsed) && parsed >= 0 ? parsed : 0;
+  try {
+    const parsed = Number(atob(cursor));
+    return Number.isSafeInteger(parsed) && parsed >= 0 ? parsed : 0;
+  } catch {
+    return 0;
+  }
 }
 
 export class InMemoryRepository implements AppRepository {
@@ -98,6 +104,7 @@ export class InMemoryRepository implements AppRepository {
     this.#users.set(id, {
       user: { id, email: "traveler@example.com", displayName: "Demo Traveler", avatarUrl: null, locale: "en", createdAt: new Date().toISOString() },
       preferences: { ...defaultPreferences },
+      emailVerified: true,
     });
   }
 
@@ -227,7 +234,7 @@ export class InMemoryRepository implements AppRepository {
     if (await this.findUserByEmail(email)) throw new Error("EMAIL_CREDENTIAL_EXISTS");
     const id = crypto.randomUUID();
     const user: User = { id, email, displayName: input.displayName, avatarUrl: null, locale: input.locale, createdAt: new Date().toISOString() };
-    this.#users.set(id, { user, preferences: { ...defaultPreferences, locale: input.locale } });
+    this.#users.set(id, { user, preferences: { ...defaultPreferences, locale: input.locale }, emailVerified: false });
     this.#emailCredentials.set(email, { userId: user.id, passwordHash: input.passwordHash });
     return user;
   }
@@ -240,11 +247,28 @@ export class InMemoryRepository implements AppRepository {
   async upsertOAuthIdentity(identity: OAuthIdentity, locale: Locale): Promise<User> {
     const existing = await this.findUserByOAuth(identity.provider, identity.subject);
     if (existing) return existing;
+    const email = identity.email.trim().toLowerCase();
+    const state = [...this.#users.values()].find((candidate) => candidate.user.email === email);
+    if (state) {
+      if (!state.emailVerified) {
+        this.#emailCredentials.delete(email);
+        await this.revokeUserSessions(state.user.id);
+        state.emailVerified = true;
+      }
+      this.#oauthUsers.set(`${identity.provider}:${identity.subject}`, state.user.id);
+      return state.user;
+    }
     const id = crypto.randomUUID();
-    const user: User = { id, email: identity.email, displayName: identity.displayName, avatarUrl: identity.avatarUrl, locale, createdAt: new Date().toISOString() };
-    this.#users.set(id, { user, preferences: { ...defaultPreferences, locale } });
+    const user: User = { id, email, displayName: identity.displayName, avatarUrl: identity.avatarUrl, locale, createdAt: new Date().toISOString() };
+    this.#users.set(id, { user, preferences: { ...defaultPreferences, locale }, emailVerified: true });
     this.#oauthUsers.set(`${identity.provider}:${identity.subject}`, id);
     return user;
+  }
+
+  async setPassword(userId: string, passwordHash: string): Promise<void> {
+    const state = this.#users.get(userId);
+    if (!state) throw new Error("User not found");
+    this.#emailCredentials.set(state.user.email, { userId, passwordHash });
   }
 
   async updateProfile(userId: string, patch: { displayName?: string; locale?: Locale }): Promise<User> {
@@ -293,8 +317,24 @@ export class InMemoryRepository implements AppRepository {
     return this.#refreshTokens.get(tokenHash) ?? null;
   }
 
-  async markRefreshTokenUsed(id: string): Promise<void> {
-    for (const token of this.#refreshTokens.values()) if (token.id === id) token.usedAt = new Date();
+  async markRefreshTokenUsed(id: string): Promise<boolean> {
+    for (const token of this.#refreshTokens.values()) {
+      if (token.id !== id) continue;
+      if (token.usedAt) return false;
+      token.usedAt = new Date();
+      return true;
+    }
+    return false;
+  }
+
+  async revokeUserSessions(userId: string, exceptSessionId?: string): Promise<void> {
+    const revoked = new Set<string>();
+    for (const session of this.#sessions.values()) {
+      if (session.userId !== userId || session.id === exceptSessionId || session.revokedAt) continue;
+      session.revokedAt = new Date();
+      revoked.add(session.id);
+    }
+    for (const token of this.#refreshTokens.values()) if (revoked.has(token.sessionId)) token.revokedAt = new Date();
   }
 
   async setFavorite(userId: string, destinationId: string, enabled: boolean): Promise<void> {
@@ -315,6 +355,10 @@ export class InMemoryRepository implements AppRepository {
 
   async listTrips(userId: string, locale: Locale): Promise<Trip[]> {
     return Promise.all([...this.#trips.values()].filter((trip) => trip.userId === userId).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)).map((trip) => this.#toTrip(trip, locale)));
+  }
+
+  async countTrips(userId: string): Promise<number> {
+    return [...this.#trips.values()].filter((trip) => trip.userId === userId).length;
   }
 
   async getTrip(userId: string, tripId: string, locale: Locale): Promise<Trip | null> {
@@ -345,11 +389,11 @@ export class InMemoryRepository implements AppRepository {
     return trip?.userId === userId ? this.#trips.delete(tripId) : false;
   }
 
-  async addDestination(userId: string, tripId: string, destinationId: string, notes: string | null, locale: Locale): Promise<Trip | null> {
+  async addDestination(userId: string, tripId: string, destinationId: string, notes: string | null | undefined, locale: Locale): Promise<Trip | null> {
     const trip = this.#trips.get(tripId);
     if (!trip || trip.userId !== userId || !seedDestinations.some((item) => item.id === destinationId)) return null;
     if (!trip.destinationIds.includes(destinationId)) trip.destinationIds.push(destinationId);
-    trip.destinationNotes[destinationId] = notes;
+    if (notes !== undefined) trip.destinationNotes[destinationId] = notes;
     trip.updatedAt = new Date().toISOString();
     return this.#toTrip(trip, locale);
   }

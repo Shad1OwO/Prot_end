@@ -20,9 +20,13 @@ services:
       dockerfile: apps/api/Dockerfile
     env_file: [.env]
     environment:
+      # Set here, not in .env, so a copied .env.example can never run the API in development mode.
+      NODE_ENV: production
       PORT: 4520
       WEB_ORIGIN: https://${APP_HOST}
       API_ORIGIN: https://${APP_HOST}
+      # Caddy overwrites X-Forwarded-For with the address it saw; the API rate-limits on that.
+      CLIENT_IP_HEADER: x-forwarded-for
     networks:
       caddy:
         aliases: [tourism-api]
@@ -38,7 +42,10 @@ services:
       context: .
       dockerfile: apps/worker/Dockerfile
     env_file: [.env]
-    networks: [app, data]
+    environment:
+      NODE_ENV: production
+    # app and data are internal-only; egress is what lets the worker reach the AI providers and Google Maps.
+    networks: [app, data, egress]
     depends_on:
       postgres: { condition: service_healthy }
       redis: { condition: service_healthy }
@@ -91,7 +98,8 @@ services:
 
   clamav:
     image: clamav/clamav:1.4
-    networks: [data]
+    # egress lets freshclam download signature updates.
+    networks: [data, egress]
     restart: unless-stopped
 
   prometheus:
@@ -125,6 +133,8 @@ networks:
     external: true
   app: { internal: true }
   data: { internal: true }
+  # Outbound internet only. It publishes no ports and Caddy is not attached, so nothing on it is reachable from outside.
+  egress: {}
 volumes:
   postgres_data: {}
   redis_data: {}

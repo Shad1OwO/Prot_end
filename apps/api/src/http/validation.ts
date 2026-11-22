@@ -17,8 +17,17 @@ export function parseCookies(header: string | null): Record<string, string> {
   return Object.fromEntries(header.split(";").flatMap((part) => {
     const separator = part.indexOf("=");
     if (separator < 1) return [];
-    return [[part.slice(0, separator).trim(), decodeURIComponent(part.slice(separator + 1).trim())]];
+    return [[part.slice(0, separator).trim(), decodeCookieValue(part.slice(separator + 1).trim())]];
   }));
+}
+
+/** Other applications on the same domain can set cookies we cannot decode; those must not break ours. */
+function decodeCookieValue(value: string): string {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
 }
 
 export function cookie(name: string, value: string, options: { maxAge?: number; httpOnly?: boolean; secure?: boolean; sameSite?: "Strict" | "Lax"; path?: string } = {}): string {

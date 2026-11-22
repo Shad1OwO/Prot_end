@@ -15,6 +15,11 @@
 2. Generate `JWT_SECRET` and `INTERNAL_API_KEY` with at least 32 random bytes.
 3. Create `secrets/postgres_password.txt`, `secrets/minio_access_key.txt`, `secrets/minio_secret_key.txt`, and `secrets/grafana_password.txt` with mode `0600`.
 4. Do not commit `.env` or `secrets/`.
+5. The API refuses to start in production with the placeholder `JWT_SECRET` / `INTERNAL_API_KEY` from `.env.example` or without `DATABASE_URL`. An unset `NODE_ENV` counts as production; `compose.yaml` pins it to `production` regardless of `.env`.
+6. `compose.yaml` sets `CLIENT_IP_HEADER=x-forwarded-for` because Caddy overwrites that header with the address it saw. Rate limits key on it. Behind a different proxy, set it to the header that proxy controls; without a proxy leave it unset. Never name a header clients can send unfiltered.
+7. Optional: set `METRICS_TOKEN` to require `Authorization: Bearer <token>` on `/metrics`, and give Prometheus the same token. `/metrics` already answers 404 to any request that carries proxy headers.
+
+Apply migration `0003` before releasing this version: it adds `users.email_verified_at`. Signing in with Google to an address that was registered by password but never verified now removes that password and signs out its sessions (the Google identity proves ownership; the password registration did not). The owner can set a new password from the profile page.
 
 ## Caddy reverse proxy
 
@@ -31,11 +36,11 @@ travel.example.com {
     encode zstd gzip
 
     handle /api/* {
-        reverse_proxy tourism-api:4000
+        reverse_proxy tourism-api:4520
     }
 
     handle /health/* {
-        reverse_proxy tourism-api:4000
+        reverse_proxy tourism-api:4520
     }
 
     handle {

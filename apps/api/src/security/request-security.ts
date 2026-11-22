@@ -9,7 +9,7 @@ export function verifyWriteRequest(request: Request, expectedOrigin: string): vo
   const origin = request.headers.get("origin");
   const referer = request.headers.get("referer");
   const originMatches = origin === expectedOrigin;
-  const refererMatches = referer ? new URL(referer).origin === expectedOrigin : false;
+  const refererMatches = referer ? originOf(referer) === expectedOrigin : false;
   if (!originMatches && !refererMatches) throw new HttpError(403, "Forbidden", "Write requests must originate from the configured web application.");
 
   const cookies = parseCookies(request.headers.get("cookie"));
@@ -17,6 +17,25 @@ export function verifyWriteRequest(request: Request, expectedOrigin: string): vo
   const headerToken = request.headers.get("x-csrf-token");
   const cookieToken = cookies.csrf_token;
   if (!headerToken || !cookieToken || !constantTimeEqual(headerToken, cookieToken)) throw new HttpError(403, "Forbidden", "A valid CSRF token is required.");
+}
+
+function originOf(url: string): string | null {
+  try {
+    return new URL(url).origin;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Resolves the address to rate-limit on. Forwarding headers are client-controlled unless a proxy
+ * overwrites them, so they are only read when `trustedHeader` names the one our proxy sets.
+ */
+export function clientAddress(request: Request, trustedHeader: "x-forwarded-for" | "cf-connecting-ip" | undefined, socketAddress: string | undefined): string {
+  if (trustedHeader === "cf-connecting-ip") return request.headers.get("cf-connecting-ip")?.trim() || socketAddress || "local";
+  // A proxy appends the address it saw, so only the last entry is one the client could not forge.
+  if (trustedHeader === "x-forwarded-for") return request.headers.get("x-forwarded-for")?.split(",").at(-1)?.trim() || socketAddress || "local";
+  return socketAddress || "local";
 }
 
 function constantTimeEqual(left: string, right: string): boolean {

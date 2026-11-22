@@ -8,6 +8,8 @@ export const users = pgTable("users", {
   displayName: text("display_name").notNull(),
   avatarUrl: text("avatar_url"),
   locale: localeEnum("locale").notNull().default("en"),
+  /** Set once an identity provider has vouched for the address. Password sign-up alone never sets it. */
+  emailVerifiedAt: timestamp("email_verified_at", { withTimezone: true }),
   archivedAt: timestamp("archived_at", { withTimezone: true }),
   createdAt: createdAt(),
   updatedAt: updatedAt(),

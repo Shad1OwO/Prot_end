@@ -22,6 +22,13 @@
       "when": 1785423548000,
       "tag": "0002_windy_fenris",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1794669721396,
+      "tag": "0003_happy_ultron",
+      "breakpoints": true
     }
   ]
 }

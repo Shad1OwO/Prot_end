@@ -10,10 +10,10 @@ export class MetricsRegistry {
   readonly #routes = new Map<string, RouteMetric>();
   #queuedRecommendationJobs = 0;
 
+  /** `route` must be a route template (or a fixed placeholder), never a raw URL: every distinct value is kept forever. */
   observe(method: string, route: string, status: number, durationMs: number): void {
-    const normalizedRoute = route.replace(/[0-9a-f]{8}-[0-9a-f-]{27,}/gi, ":id");
-    const key = `${method}:${normalizedRoute}:${status}`;
-    const metric = this.#routes.get(key) ?? { method, route: normalizedRoute, status, count: 0, durationSeconds: 0 };
+    const key = `${method}:${route}:${status}`;
+    const metric = this.#routes.get(key) ?? { method, route, status, count: 0, durationSeconds: 0 };
     metric.count += 1;
     metric.durationSeconds += durationMs / 1_000;
     this.#routes.set(key, metric);

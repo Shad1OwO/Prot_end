@@ -2,8 +2,8 @@
 
 import type { SessionResponse } from "@tourism/contracts";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from "react";
-import { authApi, ApiError } from "@/lib/api";
+import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
+import { authApi, ApiError, sessionRefreshedEvent } from "@/lib/api";
 import { SignInDialog } from "./sign-in-dialog";
 
 interface AuthContextValue {
@@ -23,6 +23,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const queryClient = useQueryClient();
   const sessionQuery = useQuery({ queryKey: ["session"], queryFn: authApi.me, retry: false });
   const session = sessionQuery.error instanceof ApiError && sessionQuery.error.status === 401 ? null : sessionQuery.data ?? null;
+  useEffect(() => {
+    // Requests made while the access token was expired were answered as a guest (no saved/liked flags).
+    const refetchGuestData = () => { void queryClient.invalidateQueries({ predicate: (query) => query.queryKey[0] !== "session" }); };
+    window.addEventListener(sessionRefreshedEvent, refetchGuestData);
+    return () => window.removeEventListener(sessionRefreshedEvent, refetchGuestData);
+  }, [queryClient]);
   const refresh = useCallback(async () => { await queryClient.invalidateQueries({ queryKey: ["session"] }); }, [queryClient]);
   const requireAuth = useCallback((action?: () => void) => {
     if (!session) { setDialogOpen(true); return false; }

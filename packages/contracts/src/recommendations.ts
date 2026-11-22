@@ -16,3 +16,5 @@ export type RecommendationJob = z.infer<typeof recommendationJobSchema>;
 export const recommendationResultSchema = z.object({ job: recommendationJobSchema, items: z.array(z.object({ destination: destinationCardSchema, reason: z.string(), score: z.number().min(0).max(1) })), clarification: z.string().nullable(), provider: z.string(), deterministicFallback: z.boolean() });
 export type RecommendationResult = z.infer<typeof recommendationResultSchema>;
 export const recommendationCreatedSchema = z.object({ job: recommendationJobSchema, statusUrl: z.string(), eventsUrl: z.string() });
+/** The only failure text a user sees. The real cause is logged, never stored on the job. */
+export const recommendationFailedMessage = "The recommendation could not be completed. Please try again.";

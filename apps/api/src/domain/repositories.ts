@@ -67,7 +67,14 @@ export interface IdentityRepository {
   findEmailCredential(email: string): Promise<{ user: User; passwordHash: string } | null>;
   createEmailCredential(input: { email: string; displayName: string; passwordHash: string; locale: Locale }): Promise<User>;
   findUserByOAuth(provider: "google", subject: string): Promise<User | null>;
+  /**
+   * Signs a provider-verified identity in, creating or linking the account for its email address.
+   * Linking to an account whose address was never verified removes that account's password and
+   * revokes its sessions: the provider has proven ownership, whoever registered it has not.
+   */
   upsertOAuthIdentity(identity: OAuthIdentity, locale: Locale): Promise<User>;
+  /** Sets or replaces the account's password hash. */
+  setPassword(userId: string, passwordHash: string): Promise<void>;
   updateProfile(userId: string, patch: { displayName?: string; locale?: Locale }): Promise<User>;
   getPreferences(userId: string): Promise<UserPreferences>;
   updatePreferences(userId: string, preferences: UserPreferences): Promise<UserPreferences>;
@@ -80,7 +87,10 @@ export interface SessionRepository {
   revokeFamily(familyId: string): Promise<void>;
   createRefreshToken(input: Omit<StoredRefreshToken, "usedAt" | "revokedAt"> & { parentTokenId?: string }): Promise<void>;
   findRefreshToken(tokenHash: string): Promise<StoredRefreshToken | null>;
-  markRefreshTokenUsed(id: string): Promise<void>;
+  /** Atomically claims a refresh token. Returns false when another request already used it. */
+  markRefreshTokenUsed(id: string): Promise<boolean>;
+  /** Revokes every session of a user, optionally sparing the one making the request. */
+  revokeUserSessions(userId: string, exceptSessionId?: string): Promise<void>;
 }
 
 export interface SocialRepository {
@@ -91,11 +101,13 @@ export interface SocialRepository {
 
 export interface TripRepository {
   listTrips(userId: string, locale: Locale): Promise<Trip[]>;
+  countTrips(userId: string): Promise<number>;
   getTrip(userId: string, tripId: string, locale: Locale): Promise<Trip | null>;
   createTrip(userId: string, input: TripCreate, locale: Locale): Promise<Trip>;
   updateTrip(userId: string, tripId: string, input: TripUpdate, locale: Locale): Promise<Trip | null>;
   deleteTrip(userId: string, tripId: string): Promise<boolean>;
-  addDestination(userId: string, tripId: string, destinationId: string, notes: string | null, locale: Locale): Promise<Trip | null>;
+  /** `notes` undefined keeps the note of a destination that is already in the trip; null clears it. */
+  addDestination(userId: string, tripId: string, destinationId: string, notes: string | null | undefined, locale: Locale): Promise<Trip | null>;
   removeDestination(userId: string, tripId: string, destinationId: string, locale: Locale): Promise<Trip | null>;
   reorderDestinations(userId: string, tripId: string, destinationIds: string[], locale: Locale): Promise<Trip | null>;
 }

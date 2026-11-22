@@ -1,4 +1,4 @@
-import type { AiProviderResponse } from "@tourism/contracts";
+import { recommendationFailedMessage, type AiProviderResponse } from "@tourism/contracts";
 import type { AppRepository } from "../domain/repositories";
 
 const sensitivePattern = /(?:[\w.+-]+@[\w.-]+\.[a-z]{2,}|\+?\d[\d\s().-]{7,}\d)/gi;
@@ -38,7 +38,8 @@ export class DeterministicRecommendationProcessor {
       }
       await this.repository.updateJob(jobId, { status: "completed", progress: 100, statusMessage: "Recommendations ready", error: null });
     } catch (error) {
-      await this.repository.updateJob(jobId, { status: "failed", progress: 100, statusMessage: "Recommendation failed", error: error instanceof Error ? error.message : "Unknown recommendation error" });
+      console.error(JSON.stringify({ level: "error", message: "recommendation_failed", jobId, error: error instanceof Error ? error.message : String(error) }));
+      await this.repository.updateJob(jobId, { status: "failed", progress: 100, statusMessage: "Recommendation failed", error: recommendationFailedMessage });
     }
   }
 }

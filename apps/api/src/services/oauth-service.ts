@@ -4,7 +4,7 @@ import type { OAuthIdentityProvider } from "../domain/providers";
 import type { AppRepository } from "../domain/repositories";
 import { HttpError } from "../http/errors";
 import { cookie, parseCookies } from "../http/validation";
-import { SessionService, type IssuedSession } from "./session-service";
+import { cookiesAreSecure, SessionService, type IssuedSession } from "./session-service";
 import { TokenService } from "./token-service";
 
 export interface OAuthStartResult {
@@ -22,7 +22,7 @@ export class OAuthService {
     readonly providers: Record<OAuthProvider, OAuthIdentityProvider>,
     readonly env: ApiEnvironment,
   ) {
-    this.#secure = env.NODE_ENV === "production";
+    this.#secure = cookiesAreSecure(env);
   }
 
   async start(providerName: OAuthProvider, locale: Locale, returnTo: string): Promise<OAuthStartResult> {

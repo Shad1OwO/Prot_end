@@ -10,15 +10,29 @@ export interface IssuedSession {
   cookies: string[];
 }
 
+export interface SessionServiceOptions {
+  /**
+   * How long after a refresh token is used a second use is treated as a harmless race (two tabs
+   * refreshing at once) rather than as theft. Outside this window reuse revokes the whole family.
+   */
+  refreshReuseGraceMs?: number;
+}
+
+/** Cookies must be Secure whenever the site is HTTPS, whatever NODE_ENV says. */
+export const cookiesAreSecure = (env: Pick<ApiEnvironment, "WEB_ORIGIN" | "NODE_ENV">) => env.NODE_ENV === "production" || new URL(env.WEB_ORIGIN).protocol === "https:";
+
 export class SessionService {
   readonly #secure: boolean;
+  readonly #refreshReuseGraceMs: number;
 
   constructor(
     readonly repository: AppRepository,
     readonly tokens: TokenService,
     env: ApiEnvironment,
+    options: SessionServiceOptions = {},
   ) {
-    this.#secure = env.NODE_ENV === "production";
+    this.#secure = cookiesAreSecure(env);
+    this.#refreshReuseGraceMs = options.refreshReuseGraceMs ?? 10_000;
   }
 
   async issue(user: User, metadata: { userAgent?: string; ipHash?: string } = {}): Promise<IssuedSession> {
@@ -33,6 +47,7 @@ export class SessionService {
     const stored = await this.repository.findRefreshToken(tokenHash);
     if (!stored) throw new HttpError(401, "Unauthorized", "The refresh token is invalid.");
     if (stored.usedAt) {
+      if (Date.now() - stored.usedAt.getTime() < this.#refreshReuseGraceMs) throw refreshInProgress();
       await this.repository.revokeFamily(stored.familyId);
       throw new HttpError(401, "Refresh Token Replay", "Refresh-token reuse was detected and the session family was revoked.");
     }
@@ -41,14 +56,19 @@ export class SessionService {
     if (!session || session.revokedAt || session.expiresAt <= new Date()) throw new HttpError(401, "Unauthorized", "The session is expired or revoked.");
     const user = await this.repository.findUserById(stored.userId);
     if (!user) throw new HttpError(401, "Unauthorized", "The session owner no longer exists.");
-    await this.repository.markRefreshTokenUsed(stored.id);
+    // Checking `usedAt` above and writing it here are separate steps; only the request that wins this claim may rotate.
+    if (!(await this.repository.markRefreshTokenUsed(stored.id))) throw refreshInProgress();
     return this.#issueTokens(user, stored.sessionId, stored.familyId, stored.expiresAt, stored.id);
   }
 
-  async authenticate(request: Request, required = true): Promise<{ user: User; claims: AccessTokenClaims } | null> {
-    const cookies = parseCookies(request.headers.get("cookie"));
+  /** The access token a request presents, from the Authorization header or the session cookie. */
+  accessTokenFrom(request: Request): string | undefined {
     const authorization = request.headers.get("authorization");
-    const token = authorization?.startsWith("Bearer ") ? authorization.slice(7) : cookies.access_token;
+    return authorization?.startsWith("Bearer ") ? authorization.slice(7) : parseCookies(request.headers.get("cookie")).access_token;
+  }
+
+  async authenticate(request: Request, required = true): Promise<{ user: User; claims: AccessTokenClaims } | null> {
+    const token = this.accessTokenFrom(request);
     if (!token) {
       if (required) throw new HttpError(401, "Unauthorized", "Sign in is required for this action.");
       return null;
@@ -108,4 +128,9 @@ export class SessionService {
       ],
     };
   }
+}
+
+/** Another request is rotating this token right now; the caller should retry with the cookies that request set. */
+function refreshInProgress(): HttpError {
+  return new HttpError(409, "Refresh In Progress", "This session is already being refreshed. Retry the original request.");
 }

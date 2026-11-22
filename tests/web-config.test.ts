@@ -1,0 +1,38 @@
+import { describe, expect, test } from "bun:test";
+import nextConfig from "../apps/web/next.config";
+import { allowedImageHosts, catalogImportSchema, tripUpdateSchema } from "../packages/contracts/src";
+
+const destination = (imageUrls: string[]) => ({ destinations: [{ slug: "new-place", scope: "thailand", translations: { en: { name: "New place", shortDescription: "Short", description: "Long" }, th: { name: "ที่ใหม่", shortDescription: "สั้น", description: "ยาว" } }, coordinates: { latitude: 13.7, longitude: 100.5 }, categorySlugs: ["nature"], imageUrls }] });
+
+describe("catalog images", () => {
+  test("import accepts an image the website is able to render", () => {
+    expect(catalogImportSchema.safeParse(destination(["https://images.unsplash.com/photo-1"])).success).toBe(true);
+  });
+  test("import rejects an image host the website would crash on", () => {
+    expect(catalogImportSchema.safeParse(destination(["https://evil.example/photo.jpg"])).success).toBe(false);
+  });
+  test("import rejects a non-HTTPS image even on an allowed host", () => {
+    expect(catalogImportSchema.safeParse(destination(["http://images.unsplash.com/photo-1"])).success).toBe(false);
+  });
+  test("every host the import accepts is configured for next/image", () => {
+    const rendered = (nextConfig.images?.remotePatterns ?? []).map((pattern) => (pattern as { hostname: string }).hostname).sort();
+    expect(rendered).toEqual([...allowedImageHosts].sort());
+  });
+});
+
+describe("trip update contract", () => {
+  test("does not invent values for fields the caller left out", () => {
+    expect(tripUpdateSchema.parse({ name: "Renamed" })).toEqual({ name: "Renamed" });
+  });
+});
+
+describe("website response headers", () => {
+  test("forbid framing and restrict where content may load from", async () => {
+    const rules = await nextConfig.headers?.() ?? [];
+    const headers = Object.fromEntries(rules.flatMap((rule) => rule.headers).map((header) => [header.key.toLowerCase(), header.value]));
+    expect(headers["x-frame-options"]).toBe("DENY");
+    expect(headers["x-content-type-options"]).toBe("nosniff");
+    expect(headers["content-security-policy"]).toContain("frame-ancestors 'none'");
+    expect(headers["content-security-policy"]).toContain("object-src 'none'");
+  });
+});

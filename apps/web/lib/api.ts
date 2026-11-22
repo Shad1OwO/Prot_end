@@ -26,12 +26,39 @@ function csrfToken(): string | undefined {
   return document.cookie.split("; ").find((item) => item.startsWith("csrf_token="))?.split("=").slice(1).join("=");
 }
 
-export async function apiFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
+/** Fired on `window` after the session was silently renewed, so cached guest responses can be refetched. */
+export const sessionRefreshedEvent = "sawasdee:session-refreshed";
+/** A 401 from these means "wrong credentials" or "no session at all", which refreshing cannot fix. */
+const refreshExemptPaths = new Set(["/api/v1/auth/login", "/api/v1/auth/register", "/api/v1/auth/refresh"]);
+let refreshing: Promise<boolean> | null = null;
+
+function send(path: string, init: RequestInit): Promise<Response> {
   const headers = new Headers(init.headers);
   if (init.body && !headers.has("content-type")) headers.set("content-type", "application/json");
   const csrf = csrfToken();
   if (csrf && init.method && !["GET", "HEAD", "OPTIONS"].includes(init.method.toUpperCase())) headers.set("x-csrf-token", decodeURIComponent(csrf));
-  const response = await fetch(`${apiOrigin}${path}`, { ...init, headers, credentials: "include", cache: init.cache ?? "no-store" });
+  return fetch(`${apiOrigin}${path}`, { ...init, headers, credentials: "include", cache: init.cache ?? "no-store" });
+}
+
+/** Runs one refresh at a time: within this tab through the shared promise, across tabs through a Web Lock. */
+function refreshSession(): Promise<boolean> {
+  refreshing ??= (async () => {
+    const rotate = async () => {
+      const response = await send("/api/v1/auth/refresh", { method: "POST" });
+      // 409 means another tab rotated the token a moment ago; its new cookies are already in the jar.
+      return response.ok || response.status === 409;
+    };
+    const renewed = typeof navigator !== "undefined" && navigator.locks ? await navigator.locks.request("sawasdee-auth-refresh", rotate) : await rotate();
+    if (renewed && typeof window !== "undefined") window.dispatchEvent(new Event(sessionRefreshedEvent));
+    return renewed;
+  })().catch(() => false).finally(() => { refreshing = null; });
+  return refreshing;
+}
+
+export async function apiFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
+  let response = await send(path, init);
+  // Access tokens last 15 minutes. The csrf cookie lives as long as the refresh token, so its presence means there is a session to renew.
+  if (response.status === 401 && !refreshExemptPaths.has(path.split("?", 1)[0] ?? path) && csrfToken() && await refreshSession()) response = await send(path, init);
   if (response.status === 204) return undefined as T;
   const body = await response.json().catch(() => null) as T | Problem | null;
   if (!response.ok) {
@@ -61,6 +88,7 @@ export const authApi = {
   register: (input: { email: string; password: string; displayName: string; locale: Locale }) => apiFetch<SessionResponse>("/api/v1/auth/register", { method: "POST", body: JSON.stringify(input) }),
   developmentSession: () => apiFetch<SessionResponse>("/api/v1/auth/development-session", { method: "POST" }),
   logout: () => apiFetch<void>("/api/v1/auth/logout", { method: "POST" }),
+  changePassword: (input: { currentPassword?: string; newPassword: string }) => apiFetch<void>("/api/v1/auth/password", { method: "POST", body: JSON.stringify(input) }),
 };
 
 export const userApi = {

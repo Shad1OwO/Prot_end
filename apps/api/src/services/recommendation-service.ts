@@ -1,4 +1,4 @@
-import type { Locale, RecommendationRequest } from "@tourism/contracts";
+import { recommendationFailedMessage, type Locale, type RecommendationRequest } from "@tourism/contracts";
 import type { AppRepository, RecommendationQueue } from "../domain/repositories";
 import { HttpError } from "../http/errors";
 
@@ -10,7 +10,8 @@ export class RecommendationService {
     try {
       await this.queue.enqueue(job.id);
     } catch (error) {
-      await this.repository.updateJob(job.id, { status: "failed", progress: 100, statusMessage: "Queue unavailable", error: error instanceof Error ? error.message : "Queue unavailable" });
+      console.error(JSON.stringify({ level: "error", message: "recommendation_enqueue_failed", jobId: job.id, error: error instanceof Error ? error.message : String(error) }));
+      await this.repository.updateJob(job.id, { status: "failed", progress: 100, statusMessage: "Queue unavailable", error: recommendationFailedMessage });
       throw new HttpError(503, "Recommendation Queue Unavailable", "The recommendation job could not be queued. Try again shortly.");
     }
     return {

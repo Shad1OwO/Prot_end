@@ -1,4 +1,5 @@
 import { getWorkerEnvironment } from "@tourism/config";
+import { recommendationFailedMessage } from "@tourism/contracts";
 import { PostgresRepository } from "@tourism/api/postgres-repository";
 import { Worker } from "bullmq";
 import { AiProviderRouter } from "./providers/ai";
@@ -29,7 +30,11 @@ const worker = new Worker("recommendations", async (queueJob) => {
     const preferences = await repository.getPreferences(stored.userId);
     if (preferences.aiHistoryOptIn) await repository.storeHistory(stored.userId, jobId, stored.request.prompt.replace(/(?:[\w.+-]+@[\w.-]+\.[a-z]{2,}|\+?\d[\d\s().-]{7,}\d)/gi, "[redacted]"), new Date(Date.now() + env.HISTORY_RETENTION_DAYS * 86_400_000));
     await repository.updateJob(jobId, { status: "completed", progress: 100, statusMessage: "Recommendations ready", error: null });
-  } catch (error) { await repository.updateJob(jobId, { status: "failed", progress: 100, statusMessage: "Recommendation failed", error: error instanceof Error ? error.message : "Unknown worker error" }); throw error; }
+  } catch (error) {
+    console.error(JSON.stringify({ level: "error", message: "recommendation_failed", jobId, error: error instanceof Error ? error.message : String(error) }));
+    await repository.updateJob(jobId, { status: "failed", progress: 100, statusMessage: "Recommendation failed", error: recommendationFailedMessage });
+    throw error;
+  }
 }, { connection: { host: redis.hostname, port: Number(redis.port || 6379), username: redis.username || undefined, password: redis.password || undefined, tls: redis.protocol === "rediss:" ? {} : undefined }, concurrency: 4 });
 
 console.info(JSON.stringify({ level: "info", message: "worker_started", concurrency: 4 }));

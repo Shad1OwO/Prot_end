@@ -1,3 +1,4 @@
+import { tripLimits } from "@tourism/contracts";
 import type {
   AiProviderResponse,
   CatalogImport,
@@ -52,7 +53,7 @@ import {
   users,
   type DatabaseConnection,
 } from "@tourism/db";
-import { and, asc, count, desc, eq, ilike, inArray, isNull, or, sql, type SQL } from "drizzle-orm";
+import { and, asc, count, desc, eq, ilike, inArray, isNull, ne, or, sql, type SQL } from "drizzle-orm";
 import type {
   AppRepository,
   OAuthIdentity,
@@ -107,8 +108,12 @@ function encodeCursor(offset: number): string {
 
 function decodeCursor(cursor?: string): number {
   if (!cursor) return 0;
-  const value = Number(atob(cursor));
-  return Number.isSafeInteger(value) && value >= 0 ? value : 0;
+  try {
+    const value = Number(atob(cursor));
+    return Number.isSafeInteger(value) && value >= 0 ? value : 0;
+  } catch {
+    return 0;
+  }
 }
 
 function approximateTravelMinutes(origin: { latitude: number; longitude: number }, destination: { latitude: number; longitude: number }): number {
@@ -254,7 +259,10 @@ export class PostgresRepository implements AppRepository {
       .leftJoin(destinationMetrics, eq(destinationMetrics.destinationId, destinations.id))
       .where(and(inArray(destinations.id, ids), isNull(destinations.archivedAt)));
     const context = await this.#loadHydration(ids, locale, userId);
-    const cards = rows.map((row) => this.#toCard(row as BaseDestinationRow, context));
+    const cards = rows.flatMap((row) => {
+      const card = this.#toCard(row as BaseDestinationRow, context);
+      return card ? [card] : [];
+    });
     const byId = new Map(cards.map((card) => [card.id, card]));
     return ids.flatMap((id) => {
       const card = byId.get(id);
@@ -334,7 +342,7 @@ export class PostgresRepository implements AppRepository {
         await tx.delete(destinationImages).where(eq(destinationImages.destinationId, destinationId));
         for (const [position, sourceUrl] of item.imageUrls.entries()) {
           const sha256 = Bun.CryptoHasher.hash("sha256", sourceUrl, "hex");
-          const assetRows = await tx.insert(mediaAssets).values({ objectKey: `import/${destinationId}/${position}`, sourceUrl, contentType: "image/jpeg", byteSize: 1, sha256 }).onConflictDoUpdate({ target: mediaAssets.sha256, set: { sourceUrl } }).returning({ id: mediaAssets.id });
+          const assetRows = await tx.insert(mediaAssets).values({ objectKey: `import/${sha256}`, sourceUrl, contentType: "image/jpeg", byteSize: 1, sha256 }).onConflictDoUpdate({ target: mediaAssets.sha256, set: { sourceUrl } }).returning({ id: mediaAssets.id });
           const mediaAssetId = assetRows[0]?.id ?? (await tx.select({ id: mediaAssets.id }).from(mediaAssets).where(eq(mediaAssets.sha256, sha256)).limit(1))[0]?.id;
           if (mediaAssetId) await tx.insert(destinationImages).values({ destinationId, mediaAssetId, altEn: item.translations.en.name, altTh: item.translations.th.name, position, isPrimary: position === 0 });
         }
@@ -378,16 +386,28 @@ export class PostgresRepository implements AppRepository {
   async upsertOAuthIdentity(identity: OAuthIdentity, locale: Locale): Promise<User> {
     const existing = await this.findUserByOAuth(identity.provider, identity.subject);
     if (existing) return existing;
+    const email = identity.email.trim().toLowerCase();
     return this.#connection.db.transaction(async (tx) => {
-      let userRow = (await tx.select().from(users).where(eq(users.email, identity.email.toLowerCase())).limit(1))[0];
+      const now = new Date();
+      let userRow = (await tx.select().from(users).where(eq(users.email, email)).limit(1).for("update"))[0];
       if (!userRow) {
-        userRow = (await tx.insert(users).values({ email: identity.email.toLowerCase(), displayName: identity.displayName, avatarUrl: identity.avatarUrl, locale }).returning())[0];
+        userRow = (await tx.insert(users).values({ email, displayName: identity.displayName, avatarUrl: identity.avatarUrl, locale, emailVerifiedAt: now }).returning())[0];
+      } else if (!userRow.emailVerifiedAt) {
+        // The provider has proven who owns this address; whoever registered it with a password has not.
+        // Drop that password and every session opened with it before handing the account over.
+        await tx.delete(emailCredentials).where(eq(emailCredentials.userId, userRow.id));
+        await this.#revokeSessions(tx, userRow.id);
+        await tx.update(users).set({ emailVerifiedAt: now, updatedAt: now }).where(eq(users.id, userRow.id));
       }
       if (!userRow) throw new Error("Failed to create OAuth user");
-      await tx.insert(oauthAccounts).values({ userId: userRow.id, provider: identity.provider, providerSubject: identity.subject, email: identity.email }).onConflictDoNothing();
+      await tx.insert(oauthAccounts).values({ userId: userRow.id, provider: identity.provider, providerSubject: identity.subject, email }).onConflictDoNothing();
       await tx.insert(userPreferences).values({ userId: userRow.id, locale }).onConflictDoNothing();
       return this.#toUser(userRow);
     });
+  }
+
+  async setPassword(userId: string, passwordHash: string): Promise<void> {
+    await this.#connection.db.insert(emailCredentials).values({ userId, passwordHash }).onConflictDoUpdate({ target: emailCredentials.userId, set: { passwordHash, updatedAt: new Date() } });
   }
 
   async updateProfile(userId: string, patch: { displayName?: string; locale?: Locale }): Promise<User> {
@@ -438,8 +458,21 @@ export class PostgresRepository implements AppRepository {
     return row ? { id: row.token.id, sessionId: row.token.sessionId, familyId: row.token.familyId, userId: row.userId, tokenHash: row.token.tokenHash, expiresAt: row.token.expiresAt, usedAt: row.token.usedAt, revokedAt: row.token.revokedAt } : null;
   }
 
-  async markRefreshTokenUsed(id: string): Promise<void> {
-    await this.#connection.db.update(refreshTokens).set({ usedAt: new Date() }).where(eq(refreshTokens.id, id));
+  async markRefreshTokenUsed(id: string): Promise<boolean> {
+    // The `used_at is null` guard makes the claim atomic: of two concurrent refreshes only one update matches a row.
+    const claimed = await this.#connection.db.update(refreshTokens).set({ usedAt: new Date() }).where(and(eq(refreshTokens.id, id), isNull(refreshTokens.usedAt))).returning({ id: refreshTokens.id });
+    return claimed.length > 0;
+  }
+
+  async revokeUserSessions(userId: string, exceptSessionId?: string): Promise<void> {
+    await this.#connection.db.transaction((tx) => this.#revokeSessions(tx, userId, exceptSessionId));
+  }
+
+  async #revokeSessions(tx: Pick<DatabaseConnection["db"], "select" | "update">, userId: string, exceptSessionId?: string): Promise<void> {
+    const now = new Date();
+    const targets = and(eq(sessions.userId, userId), isNull(sessions.revokedAt), ...(exceptSessionId ? [ne(sessions.id, exceptSessionId)] : []));
+    await tx.update(refreshTokens).set({ revokedAt: now }).where(inArray(refreshTokens.sessionId, tx.select({ id: sessions.id }).from(sessions).where(targets)));
+    await tx.update(sessions).set({ revokedAt: now }).where(targets);
   }
 
   async setFavorite(userId: string, destinationId: string, enabled: boolean): Promise<void> {
@@ -465,8 +498,13 @@ export class PostgresRepository implements AppRepository {
   }
 
   async listTrips(userId: string, locale: Locale): Promise<Trip[]> {
-    const rows = await this.#connection.db.select().from(trips).where(eq(trips.userId, userId)).orderBy(desc(trips.updatedAt));
-    return Promise.all(rows.map((row) => this.#hydrateTrip(row, locale)));
+    const rows = await this.#connection.db.select().from(trips).where(eq(trips.userId, userId)).orderBy(desc(trips.updatedAt)).limit(tripLimits.maxTripsPerUser);
+    return this.#hydrateTrips(rows, locale);
+  }
+
+  async countTrips(userId: string): Promise<number> {
+    const rows = await this.#connection.db.select({ total: count() }).from(trips).where(eq(trips.userId, userId));
+    return Number(rows[0]?.total ?? 0);
   }
 
   async getTrip(userId: string, tripId: string, locale: Locale): Promise<Trip | null> {
@@ -490,11 +528,14 @@ export class PostgresRepository implements AppRepository {
     return rows.length > 0;
   }
 
-  async addDestination(userId: string, tripId: string, destinationId: string, notes: string | null, locale: Locale): Promise<Trip | null> {
+  async addDestination(userId: string, tripId: string, destinationId: string, notes: string | null | undefined, locale: Locale): Promise<Trip | null> {
     const owned = await this.getTrip(userId, tripId, locale);
     if (!owned) return null;
     const positionRows = await this.#connection.db.select({ max: sql<number>`coalesce(max(${tripDestinations.position}), -1)` }).from(tripDestinations).where(eq(tripDestinations.tripId, tripId));
-    await this.#connection.db.insert(tripDestinations).values({ tripId, destinationId, notes, position: Number(positionRows[0]?.max ?? -1) + 1 }).onConflictDoUpdate({ target: [tripDestinations.tripId, tripDestinations.destinationId], set: { notes } });
+    const insert = this.#connection.db.insert(tripDestinations).values({ tripId, destinationId, notes: notes ?? null, position: Number(positionRows[0]?.max ?? -1) + 1 });
+    // Re-adding a destination without notes must not erase the note it already has.
+    if (notes === undefined) await insert.onConflictDoNothing({ target: [tripDestinations.tripId, tripDestinations.destinationId] });
+    else await insert.onConflictDoUpdate({ target: [tripDestinations.tripId, tripDestinations.destinationId], set: { notes } });
     await this.#connection.db.update(trips).set({ updatedAt: new Date() }).where(eq(trips.id, tripId));
     return this.getTrip(userId, tripId, locale);
   }
@@ -597,27 +638,40 @@ export class PostgresRepository implements AppRepository {
   }
 
   async #hydrateTrip(row: typeof trips.$inferSelect, locale: Locale): Promise<Trip> {
-    const destinationRows = await this.#connection.db.select().from(tripDestinations).where(eq(tripDestinations.tripId, row.id)).orderBy(asc(tripDestinations.position));
-    const cards = await this.getByIds(destinationRows.map((destination) => destination.destinationId), locale, row.userId);
+    const [trip] = await this.#hydrateTrips([row], locale);
+    if (!trip) throw new Error("Failed to load trip");
+    return trip;
+  }
+
+  /** Loads the destinations of many trips in a fixed number of queries, whatever the number of trips. */
+  async #hydrateTrips(rows: Array<typeof trips.$inferSelect>, locale: Locale): Promise<Trip[]> {
+    const owner = rows[0]?.userId;
+    if (!owner) return [];
+    const destinationRows = await this.#connection.db.select().from(tripDestinations).where(inArray(tripDestinations.tripId, rows.map((row) => row.id))).orderBy(asc(tripDestinations.position));
+    const cards = await this.getByIds([...new Set(destinationRows.map((destination) => destination.destinationId))], locale, owner);
     const byId = new Map(cards.map((card) => [card.id, card]));
-    return {
+    return rows.map((row) => ({
       id: row.id,
       name: row.name,
       startDate: row.startDate,
       endDate: row.endDate,
       notes: row.notes,
-      destinations: destinationRows.flatMap((destination) => {
+      destinations: destinationRows.filter((destination) => destination.tripId === row.id).flatMap((destination) => {
         const card = byId.get(destination.destinationId);
         return card ? [{ id: destination.id, destination: card, position: destination.position, notes: destination.notes }] : [];
       }),
       createdAt: row.createdAt.toISOString(),
       updatedAt: row.updatedAt.toISOString(),
-    };
+    }));
   }
 
-  #toCard(row: BaseDestinationRow, context: HydrationContext): DestinationCard {
+  /** Returns null for a destination that cannot be shown, so one bad row cannot take down a whole listing. */
+  #toCard(row: BaseDestinationRow, context: HydrationContext): DestinationCard | null {
     const image = context.imageRows.find((candidate) => candidate.destinationId === row.id && candidate.isPrimary) ?? context.imageRows.find((candidate) => candidate.destinationId === row.id);
-    if (!image) throw new Error(`Destination ${row.id} has no image`);
+    if (!image) {
+      console.warn(JSON.stringify({ level: "warn", message: "destination_without_image_skipped", destinationId: row.id }));
+      return null;
+    }
     return {
       id: row.id,
       slug: row.slug,

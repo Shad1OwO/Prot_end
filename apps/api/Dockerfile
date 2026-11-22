@@ -16,5 +16,5 @@ COPY --from=build /workspace/apps/api/dist apps/api/dist
 COPY --from=build /workspace/node_modules node_modules
 COPY --from=build /workspace/packages packages
 USER bun
-EXPOSE 4000
+EXPOSE 4520
 CMD ["bun", "apps/api/dist/index.js"]

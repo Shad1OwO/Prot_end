@@ -1,5 +1,5 @@
 import { createHash, randomBytes } from "node:crypto";
-import { createRemoteJWKSet, jwtVerify } from "jose";
+import { createRemoteJWKSet, jwtVerify, type JWTPayload } from "jose";
 import type { OAuthIdentityProvider, OAuthAuthorizationRequest } from "../domain/providers";
 import type { OAuthIdentity } from "../domain/repositories";
 import { HttpError } from "../http/errors";
@@ -16,6 +16,14 @@ async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
   const response = await fetch(url, { ...init, signal: AbortSignal.timeout(12_000) });
   if (!response.ok) throw new HttpError(502, "OAuth Provider Error", `The identity provider returned HTTP ${response.status}.`);
   return response.json() as Promise<T>;
+}
+
+/** Turns verified ID-token claims into an identity. The token signature is checked by the caller. */
+export function googleIdentityFromClaims(payload: JWTPayload, expectedNonce: string): OAuthIdentity {
+  if (payload.nonce !== expectedNonce || !payload.sub || typeof payload.email !== "string" || typeof payload.name !== "string") throw new HttpError(400, "Invalid OAuth Identity", "Google returned an incomplete or unverified identity.");
+  // Accounts are matched by email address, so an address Google has not verified proves nothing.
+  if (payload.email_verified !== true) throw new HttpError(400, "Invalid OAuth Identity", "Google has not verified this email address.");
+  return { provider: "google", subject: payload.sub, email: payload.email, displayName: payload.name, avatarUrl: typeof payload.picture === "string" ? payload.picture : null };
 }
 
 export class GoogleOAuthProvider implements OAuthIdentityProvider {
@@ -40,8 +48,7 @@ export class GoogleOAuthProvider implements OAuthIdentityProvider {
     this.#assertConfigured();
     const tokens = await fetchJson<{ id_token: string }>("https://oauth2.googleapis.com/token", { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" }, body: new URLSearchParams({ code: input.code, client_id: this.clientId as string, client_secret: this.clientSecret as string, redirect_uri: input.redirectUri, grant_type: "authorization_code", code_verifier: input.codeVerifier }) });
     const { payload } = await jwtVerify(tokens.id_token, this.#jwks, { issuer: ["https://accounts.google.com", "accounts.google.com"], audience: this.clientId as string });
-    if (payload.nonce !== input.expectedNonce || !payload.sub || typeof payload.email !== "string" || typeof payload.name !== "string") throw new HttpError(400, "Invalid OAuth Identity", "Google returned an incomplete or unverified identity.");
-    return { provider: "google", subject: payload.sub, email: payload.email, displayName: payload.name, avatarUrl: typeof payload.picture === "string" ? payload.picture : null };
+    return googleIdentityFromClaims(payload, input.expectedNonce);
   }
 
   #assertConfigured(): void {
