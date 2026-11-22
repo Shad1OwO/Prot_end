@@ -21,4 +21,11 @@ describe("database migrations", () => {
     }
     expect(offenders).toEqual([]);
   });
+  test("migration 0004 adds catalog source and photo credit columns", async () => {
+    const { Glob } = await import("bun");
+    const files = await Array.fromAsync(new Glob("packages/db/migrations/0004_*.sql").scan("."));
+    expect(files).toHaveLength(1);
+    const text = await Bun.file(files[0] as string).text();
+    for (const expected of ['"external_id"', '"notability"', '"attribution_url"', "destinations_source_external_unique"]) expect(text).toContain(expected);
+  });
 });

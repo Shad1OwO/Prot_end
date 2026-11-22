@@ -1,7 +1,7 @@
 import type { NextConfig } from "next";
 
 /** Hosts catalog images may come from. Must match `allowedImageHosts` in @tourism/contracts (a test compares them). */
-const imageHosts = ["images.unsplash.com", "plus.unsplash.com"];
+const imageHosts = ["images.unsplash.com", "plus.unsplash.com", "upload.wikimedia.org", "thumb.wikimedia.org"];
 const apiOrigin = process.env.NEXT_PUBLIC_API_ORIGIN ?? "http://localhost:4000";
 const development = process.env.NODE_ENV !== "production";
 

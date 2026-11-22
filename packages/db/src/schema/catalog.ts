@@ -11,11 +11,18 @@ export const cityTranslations = pgTable("city_translations", { cityId: uuid("cit
 
 export const mediaAssets = pgTable("media_assets", {
   id: primaryId(), objectKey: text("object_key").notNull(), sourceUrl: text("source_url"), contentType: text("content_type").notNull(), byteSize: integer("byte_size").notNull(), sha256: text("sha256").notNull(), width: integer("width"), height: integer("height"), blurDataUrl: text("blur_data_url"), scannedAt: timestamp("scanned_at", { withTimezone: true }), createdAt: createdAt(),
+  // Credit for photos used under a licence that requires it (Wikimedia Commons). Null for our own uploads.
+  author: text("author"), license: text("license"), licenseUrl: text("license_url"), attributionUrl: text("attribution_url"),
 }, (table) => [uniqueIndex("media_assets_key_unique").on(table.objectKey), uniqueIndex("media_assets_sha_unique").on(table.sha256), check("media_assets_size_positive", sql`${table.byteSize} > 0`)]);
 
 export const destinations = pgTable("destinations", {
-  id: primaryId(), slug: text("slug").notNull(), scope: scopeEnum("scope").notNull(), countryId: uuid("country_id").notNull().references(() => countries.id), provinceId: uuid("province_id").references(() => provinces.id), cityId: uuid("city_id").references(() => cities.id), coordinates: geographyPoint("coordinates").notNull(), address: text("address").notNull(), openingHours: text("opening_hours"), websiteUrl: text("website_url"), metadata: jsonb("metadata").$type<Record<string, string>>().notNull().default({}), archivedAt: timestamp("archived_at", { withTimezone: true }), createdAt: createdAt(), updatedAt: updatedAt(),
-}, (table) => [uniqueIndex("destinations_slug_unique").on(table.slug), index("destinations_scope_cursor_idx").on(table.scope, table.createdAt, table.id), index("destinations_coordinates_gist_idx").using("gist", table.coordinates)]);
+  id: primaryId(), slug: text("slug").notNull(), scope: scopeEnum("scope").notNull(), countryId: uuid("country_id").notNull().references(() => countries.id), provinceId: uuid("province_id").references(() => provinces.id), cityId: uuid("city_id").references(() => cities.id), coordinates: geographyPoint("coordinates").notNull(), address: text("address").notNull(), openingHours: text("opening_hours"), websiteUrl: text("website_url"), metadata: jsonb("metadata").$type<Record<string, string>>().notNull().default({}),
+  // Where an imported destination came from ("wikidata") and its id there; null for curated destinations.
+  source: text("source"), externalId: text("external_id"),
+  // How well known the place is (Wikipedia language editions for imported places); a tie-break when sorting.
+  notability: integer("notability").notNull().default(0),
+  archivedAt: timestamp("archived_at", { withTimezone: true }), createdAt: createdAt(), updatedAt: updatedAt(),
+}, (table) => [uniqueIndex("destinations_slug_unique").on(table.slug), uniqueIndex("destinations_source_external_unique").on(table.source, table.externalId), index("destinations_scope_cursor_idx").on(table.scope, table.createdAt, table.id), index("destinations_coordinates_gist_idx").using("gist", table.coordinates)]);
 
 export const destinationTranslations = pgTable("destination_translations", {
   destinationId: uuid("destination_id").notNull().references(() => destinations.id, { onDelete: "cascade" }), locale: localeEnum("locale").notNull(), name: text("name").notNull(), shortDescription: text("short_description").notNull(), description: text("description").notNull(), searchVector: text("search_vector"),

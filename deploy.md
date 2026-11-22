@@ -73,7 +73,7 @@ The API refuses to start in production if `JWT_SECRET` or `INTERNAL_API_KEY` sti
 | Variable | Purpose |
 | --- | --- |
 | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | Google sign-in. |
-| `GEMINI_API_KEY` / `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` | AI ranking. |
+| `GEMINI_API_KEY` / `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` | AI ranking. The catalog import also uses `GEMINI_API_KEY` to translate place text into Thai. |
 | `AI_PROVIDER_PRIORITY` | Order to try providers in, e.g. `gemini`. Default `openai,gemini,anthropic`. |
 | `GOOGLE_MAPS_API_KEY` | Route distance checks. |
 
@@ -88,6 +88,7 @@ The API refuses to start in production if `JWT_SECRET` or `INTERNAL_API_KEY` sti
 | `AI_TIMEOUT_MS`, `AI_MAX_RETRIES` | 12000, 2 | AI provider call limits. |
 | `HISTORY_RETENTION_DAYS` | 90 | How long opted-in AI search history is kept. |
 | `MEDIA_CLAMAV_HOST`, `MEDIA_CLAMAV_PORT` | `clamav`, 3310 | Virus scanner address. |
+| `CATALOG_IMPORT_USER_AGENT` | `SawasdeeTravelCatalogImport/1.0 (catalog import script)` | What the catalog import calls itself when it asks Wikimedia for data. Include your site URL or a contact address, e.g. `SawasdeeTravelCatalogImport/1.0 (https://travel.example.com; ops@example.com)`: Wikimedia then allows 200 requests a minute instead of 10, and the import runs about eight times faster. |
 
 ## 5. Before the first deploy
 
@@ -111,13 +112,15 @@ protected by Cloudflare Access, after attaching them to the `edge` network).
 docker compose build --pull
 docker compose up -d postgres redis minio
 
-# apply migrations (0000-0003), then seed the catalog on the first deploy only
+# apply migrations (0000-0004), then seed the catalog on the first deploy only
 docker compose run --rm -w /workspace/packages/db api bun src/migrate.ts
 docker compose run --rm -w /workspace/packages/db api bun src/seed.ts
 
 # start everything
 docker compose up -d
 ```
+
+Then fill the catalog with worldwide places (next section).
 
 With a remote database you can instead run `bun run db:migrate` and `bun run db:seed` from any machine
 that has Bun, the repo, and `DATABASE_URL` set. The bundled Postgres is not reachable from the host,
@@ -137,6 +140,53 @@ Use HTTPS for the zone. TLS and compression happen at Cloudflare's edge.
 Do not add a route for `/metrics`. Prometheus reads it over the internal network, and the API answers
 404 to any `/metrics` request that arrives through a proxy.
 
+### Fill the worldwide catalog
+
+The seed holds only a handful of hand-written destinations. The catalog import adds about 3,800 notable places
+from all over the world (Thailand included), taken from Wikidata, Wikipedia and Wikimedia Commons:
+tourist attractions, World Heritage Sites and national parks with articles in at least 10 Wikipedia
+languages. It needs no API key. Run it after the migrations, inside the `api` image, which has internet access:
+
+```sh
+# a trial first: fetches 50 places and prints what it would do, without writing anything
+docker compose run --rm -w /workspace/packages/db api bun run catalog:import --dry-run --limit=50
+
+# the real import
+docker compose run --rm -w /workspace/packages/db api bun run catalog:import
+```
+
+It prints progress, then one JSON line with what it did: places fetched and imported, how many were
+skipped and why, how many were inserted, updated and archived, and where the Thai text came from.
+How long it takes depends on `CATALOG_IMPORT_USER_AGENT` (below): about 50 minutes without it (measured: 48), about
+5 minutes with it. The first run with `GEMINI_API_KEY` also translates about 160 batches of 20 places,
+one request every 6.5 seconds to stay inside Gemini's free tier: expect roughly another 20 to 40 minutes
+(an estimate; it has not been timed against the live API). Later runs only translate new or changed places.
+
+- **Wikimedia's rate limit.** Wikimedia allows anonymous scripts 10 requests a minute unless they say who
+  runs them, and 200 a minute when the User-Agent includes a way to reach you. Set it in `.env` to speed
+  the import up, for example
+  `CATALOG_IMPORT_USER_AGENT=SawasdeeTravelCatalogImport/1.0 (https://travel.example.com; ops@example.com)`
+  with your own site and address. The import paces itself to whichever limit applies.
+
+- **Thai text.** Thai names and descriptions come from Thai Wikipedia where it has them (about a fifth of
+  the places). With `GEMINI_API_KEY` set in `.env`, the rest are translated by Gemini; without it, or for a
+  batch Gemini fails on, the Thai fields hold the English text. If two batches in a row fail (an outage,
+  or the free tier's daily quota running out), it stops asking Gemini for the rest of that run. Each place records which happened in its
+  `metadata.thSource` (`wikipedia`, `machine` or `english`), and later runs retry the `english` ones, so
+  running it again once a key is set fills them in. Text that has not changed is never translated twice.
+- **Running it again is safe.** It updates places that changed, adds new ones, and archives places it
+  imported before that no longer qualify. It never touches the hand-written destinations, and skips
+  the Wikidata items they stand for (`wikidataIds` in `packages/db/src/seed-data.ts`) and anything within
+  300 m of one, so they do not appear twice. If any request to Wikimedia fails
+  after retries, it stops without writing anything and exits with status 1: run it again later.
+  Re-running every few months is enough.
+- **Options.** `--min-sitelinks=N` changes the notability cut-off (higher means fewer, better-known
+  places; 20 gives about 2,100). `--limit=N` imports only the N best-known places and never archives.
+  `--no-translate` skips Gemini. `--dry-run` writes nothing and does not call Gemini.
+- **Credits.** Photos are loaded from Wikimedia Commons, which requires crediting the photographer. The
+  destination page shows each photo's author and licence, and links the Wikipedia article its text came
+  from (Wikipedia text is CC BY-SA). Keep both if you change those pages.
+
 ## 7. Check it worked
 
 ```sh
@@ -144,6 +194,7 @@ docker compose ps                                   # every service "running" or
 docker compose logs cloudflared | grep -i registered   # the tunnel has connections to Cloudflare
 curl -fsS https://$APP_HOST/health/ready            # {"status":"ready","database":"remote","queue":"redis"}
 curl -fsS "https://$APP_HOST/api/v1/destinations?locale=en&scope=thailand&limit=1"
+curl -fsS "https://$APP_HOST/api/v1/destinations?locale=en&scope=worldwide&country=FR&limit=3"   # imported places
 curl -s -o /dev/null -w '%{http_code}\n' https://$APP_HOST/metrics   # expect 404
 ```
 

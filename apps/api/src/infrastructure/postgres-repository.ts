@@ -87,7 +87,7 @@ interface BaseDestinationRow {
 interface HydrationContext {
   categoryRows: Array<{ destinationId: string; id: string; slug: string; name: string; icon: string }>;
   categoryCounts: Record<string, number>;
-  imageRows: Array<{ id: string; destinationId: string; sourceUrl: string | null; objectKey: string; alt: string; width: number | null; height: number | null; blurDataUrl: string | null; isPrimary: boolean }>;
+  imageRows: Array<{ id: string; destinationId: string; sourceUrl: string | null; objectKey: string; alt: string; width: number | null; height: number | null; blurDataUrl: string | null; isPrimary: boolean; author: string | null; license: string | null; licenseUrl: string | null; attributionUrl: string | null }>;
   travelerRows: Array<{ destinationId: string; slug: string }>;
   favoriteIds: Set<string>;
   likedIds: Set<string>;
@@ -165,13 +165,14 @@ export class PostgresRepository implements AppRepository {
     const distance = hasOrigin
       ? sql<number>`ST_Distance(${destinations.coordinates}, ST_SetSRID(ST_MakePoint(${query.originLng}, ${query.originLat}), 4326)::geography)`
       : sql<number>`0`;
+    // Notability breaks ties so well-known imported places come before obscure ones, which all start with no likes.
     const order = query.sort === "rating"
-      ? [desc(destinationMetrics.rating), desc(destinations.id)]
+      ? [desc(destinationMetrics.rating), desc(destinations.notability), desc(destinations.id)]
       : query.sort === "popular"
-        ? [desc(destinationMetrics.likesCount), desc(destinations.id)]
+        ? [desc(destinationMetrics.likesCount), desc(destinations.notability), desc(destinations.id)]
         : query.sort === "distance" && hasOrigin
           ? [asc(distance), asc(destinations.id)]
-          : [desc(sql`exists(select 1 from ${featuredSlots} where ${featuredSlots.destinationId} = ${destinations.id} and now() between ${featuredSlots.startsAt} and ${featuredSlots.endsAt})`), desc(destinationMetrics.likesCount), desc(destinations.id)];
+          : [desc(sql`exists(select 1 from ${featuredSlots} where ${featuredSlots.destinationId} = ${destinations.id} and now() between ${featuredSlots.startsAt} and ${featuredSlots.endsAt})`), desc(destinationMetrics.likesCount), desc(destinations.notability), desc(destinations.id)];
     const offset = decodeCursor(query.cursor);
     const idRows = await db
       .select({ id: destinations.id })
@@ -215,7 +216,7 @@ export class PostgresRepository implements AppRepository {
       ...card,
       description: detail.description,
       address: detail.address,
-      images: images.map((image) => ({ id: image.id, url: image.sourceUrl ?? `${this.mediaBaseUrl}/api/v1/media/${encodeURIComponent(image.objectKey)}`, alt: image.alt, width: image.width ?? 1, height: image.height ?? 1, ...(image.blurDataUrl ? { blurDataUrl: image.blurDataUrl } : {}), isPrimary: image.isPrimary })),
+      images: images.map((image) => this.#toImage(image)),
       transports: transportRows.map((row) => ({ mode: row.mode, available: row.available, durationMinutes: null, distanceKm: null, label: locale === "th" ? row.labelTh : row.labelEn })),
       bestMonths: seasonRows.map((season) => season.month),
       openingHours: detail.openingHours,
@@ -634,7 +635,7 @@ export class PostgresRepository implements AppRepository {
   }
 
   async #loadImages(ids: string[], locale: Locale): Promise<HydrationContext["imageRows"]> {
-    return this.#connection.db.select({ id: destinationImages.id, destinationId: destinationImages.destinationId, sourceUrl: mediaAssets.sourceUrl, objectKey: mediaAssets.objectKey, alt: locale === "th" ? destinationImages.altTh : destinationImages.altEn, width: mediaAssets.width, height: mediaAssets.height, blurDataUrl: mediaAssets.blurDataUrl, isPrimary: destinationImages.isPrimary }).from(destinationImages).innerJoin(mediaAssets, eq(mediaAssets.id, destinationImages.mediaAssetId)).where(inArray(destinationImages.destinationId, ids)).orderBy(asc(destinationImages.position));
+    return this.#connection.db.select({ id: destinationImages.id, destinationId: destinationImages.destinationId, sourceUrl: mediaAssets.sourceUrl, objectKey: mediaAssets.objectKey, alt: locale === "th" ? destinationImages.altTh : destinationImages.altEn, width: mediaAssets.width, height: mediaAssets.height, blurDataUrl: mediaAssets.blurDataUrl, isPrimary: destinationImages.isPrimary, author: mediaAssets.author, license: mediaAssets.license, licenseUrl: mediaAssets.licenseUrl, attributionUrl: mediaAssets.attributionUrl }).from(destinationImages).innerJoin(mediaAssets, eq(mediaAssets.id, destinationImages.mediaAssetId)).where(inArray(destinationImages.destinationId, ids)).orderBy(asc(destinationImages.position));
   }
 
   async #hydrateTrip(row: typeof trips.$inferSelect, locale: Locale): Promise<Trip> {
@@ -666,6 +667,11 @@ export class PostgresRepository implements AppRepository {
   }
 
   /** Returns null for a destination that cannot be shown, so one bad row cannot take down a whole listing. */
+  #toImage(image: HydrationContext["imageRows"][number]): DestinationCard["primaryImage"] {
+    const attribution = image.author && image.license && image.attributionUrl ? { author: image.author, license: image.license, licenseUrl: image.licenseUrl, sourceUrl: image.attributionUrl } : null;
+    return { id: image.id, url: image.sourceUrl ?? `${this.mediaBaseUrl}/api/v1/media/${encodeURIComponent(image.objectKey)}`, alt: image.alt, width: image.width ?? 1, height: image.height ?? 1, ...(image.blurDataUrl ? { blurDataUrl: image.blurDataUrl } : {}), isPrimary: image.isPrimary, ...(attribution ? { attribution } : {}) };
+  }
+
   #toCard(row: BaseDestinationRow, context: HydrationContext): DestinationCard | null {
     const image = context.imageRows.find((candidate) => candidate.destinationId === row.id && candidate.isPrimary) ?? context.imageRows.find((candidate) => candidate.destinationId === row.id);
     if (!image) {
@@ -682,7 +688,7 @@ export class PostgresRepository implements AppRepository {
       province: row.province,
       city: row.city,
       coordinates: { latitude: Number(row.latitude), longitude: Number(row.longitude) },
-      primaryImage: { id: image.id, url: image.sourceUrl ?? `${this.mediaBaseUrl}/api/v1/media/${encodeURIComponent(image.objectKey)}`, alt: image.alt, width: image.width ?? 1, height: image.height ?? 1, ...(image.blurDataUrl ? { blurDataUrl: image.blurDataUrl } : {}), isPrimary: image.isPrimary },
+      primaryImage: this.#toImage(image),
       categories: context.categoryRows.filter((category) => category.destinationId === row.id).map((category) => ({ id: category.id, slug: category.slug, name: category.name, icon: category.icon, destinationCount: context.categoryCounts[category.slug] ?? 0 })),
       travelerTypes: context.travelerRows.filter((traveler) => traveler.destinationId === row.id).map((traveler) => traveler.slug),
       rating: Number(row.rating ?? 0),

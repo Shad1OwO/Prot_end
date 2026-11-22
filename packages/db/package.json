@@ -13,11 +13,13 @@
     "typecheck": "tsc -p tsconfig.json",
     "generate": "drizzle-kit generate",
     "migrate": "bun src/migrate.ts",
-    "seed": "bun src/seed.ts"
+    "seed": "bun src/seed.ts",
+    "catalog:import": "bun src/catalog-import/run.ts"
   },
   "dependencies": {
     "@tourism/contracts": "workspace:*",
     "drizzle-orm": "^0.45.4",
+    "zod": "^4.6.7",
     "postgres": "^3.4.7"
   },
   "devDependencies": {

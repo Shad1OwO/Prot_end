@@ -2,11 +2,14 @@ import { z } from "zod";
 import { coordinateSchema, cursorPageSchema, isoDateSchema, localeSchema, scopeSchema, transportModeSchema, uuidSchema } from "./common";
 
 /** Image hosts the website can render. Must match `images.remotePatterns` in apps/web/next.config.ts. */
-export const allowedImageHosts = ["images.unsplash.com", "plus.unsplash.com"] as const;
+export const allowedImageHosts = ["images.unsplash.com", "plus.unsplash.com", "upload.wikimedia.org", "thumb.wikimedia.org"] as const;
 
 export const categorySchema = z.object({ id: uuidSchema, slug: z.string().min(1), name: z.string().min(1), icon: z.string().min(1), destinationCount: z.number().int().nonnegative() });
 export type Category = z.infer<typeof categorySchema>;
-export const destinationImageSchema = z.object({ id: uuidSchema, url: z.url(), alt: z.string().min(1), width: z.number().int().positive(), height: z.number().int().positive(), blurDataUrl: z.string().optional(), isPrimary: z.boolean() });
+/** Credit a licence requires for a photo we did not take (Wikimedia Commons): shown next to the image. */
+export const imageAttributionSchema = z.object({ author: z.string().min(1), license: z.string().min(1), licenseUrl: z.url().nullable(), sourceUrl: z.url() });
+export type ImageAttribution = z.infer<typeof imageAttributionSchema>;
+export const destinationImageSchema = z.object({ id: uuidSchema, url: z.url(), alt: z.string().min(1), width: z.number().int().positive(), height: z.number().int().positive(), blurDataUrl: z.string().optional(), isPrimary: z.boolean(), attribution: imageAttributionSchema.optional() });
 export const transportOptionSchema = z.object({ mode: transportModeSchema, available: z.boolean(), durationMinutes: z.number().int().positive().nullable(), distanceKm: z.number().nonnegative().nullable(), label: z.string() });
 export const destinationCardSchema = z.object({
   id: uuidSchema, slug: z.string().min(1), scope: scopeSchema, name: z.string().min(1), shortDescription: z.string().min(1),
