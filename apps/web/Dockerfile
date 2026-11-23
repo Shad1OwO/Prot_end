@@ -28,7 +28,9 @@ FROM oven/bun:1.4.5-alpine AS runtime
 WORKDIR /workspace
 ENV NODE_ENV=production
 COPY --from=build /workspace/node_modules node_modules
-COPY --from=build /workspace/apps/web apps/web
+# Next.js writes to .next while it runs (resized images in .next/cache/images, fetch results kept for
+# `revalidate`), so the app user must own it; root-owned files there make those writes fail with EACCES.
+COPY --from=build --chown=bun:bun /workspace/apps/web apps/web
 COPY --from=build /workspace/packages packages
 USER bun
 EXPOSE 3000

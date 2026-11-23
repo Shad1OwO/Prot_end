@@ -28,6 +28,17 @@ describe("catalog images", () => {
     expect(rule).not.toContain("nowrap");
     expect(rule).not.toContain("text-overflow");
   });
+  test("the web image lets its app user write Next.js's caches (optimized images, fetch cache)", async () => {
+    const dockerfile = await Bun.file(new URL("../apps/web/Dockerfile", import.meta.url)).text();
+    const runtime = dockerfile.split(/^FROM /m).at(-1) ?? "";
+    expect(runtime).toContain("USER bun");
+    expect(runtime).toMatch(/^COPY --from=build --chown=bun:bun \/workspace\/apps\/web apps\/web$/m);
+  });
+  test("the optimized image cache has a size cap instead of half the server's free disk", () => {
+    const cap = nextConfig.images?.maximumDiskCacheSize ?? 0;
+    expect(cap).toBeGreaterThan(0);
+    expect(cap).toBeLessThanOrEqual(2_000_000_000);
+  });
   test("every host the import accepts is configured for next/image", () => {
     const rendered = (nextConfig.images?.remotePatterns ?? []).map((pattern) => (pattern as { hostname: string }).hostname).sort();
     expect(rendered).toEqual([...allowedImageHosts].sort());

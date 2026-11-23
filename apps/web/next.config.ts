@@ -33,6 +33,9 @@ const nextConfig: NextConfig = {
   transpilePackages: ["@tourism/contracts", "@tourism/ui"],
   images: {
     remotePatterns: imageHosts.map((hostname) => ({ protocol: "https" as const, hostname })),
+    // Thousands of catalog photos are resized on demand; without a cap Next.js may fill half the free disk.
+    // Least recently used images are deleted past 1 GB.
+    maximumDiskCacheSize: 1_000_000_000,
   },
   poweredByHeader: false,
   async headers() {
