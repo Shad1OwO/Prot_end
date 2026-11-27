@@ -112,9 +112,9 @@ protected by Cloudflare Access, after attaching them to the `edge` network).
 docker compose build --pull
 docker compose up -d postgres redis minio
 
-# apply migrations (0000-0004), then seed the catalog on the first deploy only
-docker compose run --rm -w /workspace/packages/db api bun src/migrate.ts
-docker compose run --rm -w /workspace/packages/db api bun src/seed.ts
+# apply migrations (0000-0005), then seed the catalog on the first deploy only
+docker compose run --rm api bun packages/db/src/migrate.ts
+docker compose run --rm api bun packages/db/src/seed.ts
 
 # start everything
 docker compose up -d
@@ -149,7 +149,7 @@ git pull
 docker compose build --pull
 
 # apply any new migrations; already-applied ones are skipped. Do not run the seed again.
-docker compose run --rm -w /workspace/packages/db api bun src/migrate.ts
+docker compose run --rm api bun packages/db/src/migrate.ts
 
 # restart with the new images
 docker compose up -d
@@ -169,10 +169,10 @@ languages. It needs no API key. Run it after the migrations, inside the `api` im
 
 ```sh
 # a trial first: fetches 50 places and prints what it would do, without writing anything
-docker compose run --rm -w /workspace/packages/db api bun run catalog:import --dry-run --limit=50
+docker compose run --rm api bun packages/db/src/catalog-import/run.ts --dry-run --limit=50
 
 # the real import
-docker compose run --rm -w /workspace/packages/db api bun run catalog:import
+docker compose run --rm api bun packages/db/src/catalog-import/run.ts
 ```
 
 It prints progress, then one JSON line with what it did: places fetched and imported, how many were
