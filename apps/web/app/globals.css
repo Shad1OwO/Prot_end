@@ -166,7 +166,10 @@ button, a { -webkit-tap-highlight-color: transparent; }
 .select-input:focus, .text-input:focus, .date-input:focus, .text-area:focus { border-color: var(--emerald); box-shadow: 0 0 0 3px color-mix(in srgb, var(--emerald) 15%, transparent); }
 .explore-results { min-width: 0; }
 .results-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 1rem; }
-.map-panel { position: relative; min-height: 420px; overflow: hidden; border: 1px solid var(--border); background: #dce7df; }
+/* isolation keeps Leaflet's pane z-indexes (400-1000) inside the map, below the header, bottom nav and dialogs. */
+.map-panel { position: relative; isolation: isolate; min-height: 420px; overflow: hidden; border: 1px solid var(--border); background: #dce7df; }
+/* The map's own h-full needs a definite height; min-height alone collapses it to 0 on phones. Desktop sets it in the 900px query below. */
+.explore-map { height: min(70dvh, 560px); }
 .map-grid { position: absolute; inset: 0; opacity: .42; background-image: linear-gradient(#93ab9d 1px, transparent 1px), linear-gradient(90deg, #93ab9d 1px, transparent 1px); background-size: 42px 42px; transform: rotate(-8deg) scale(1.15); }
 .map-marker { position: absolute; display: grid; width: 2.2rem; height: 2.2rem; place-items: center; border: 3px solid white; border-radius: 50%; background: var(--coral); color: white; box-shadow: 0 4px 12px rgba(0,0,0,.22); transform: translate(-50%, -50%); }
 .map-marker-label { position: absolute; top: 2.4rem; left: 50%; width: max-content; max-width: 140px; transform: translateX(-50%); border-radius: 4px; background: var(--surface); color: var(--text); padding: .25rem .4rem; font-size: .66rem; font-weight: 700; box-shadow: 0 2px 8px rgba(0,0,0,.14); }

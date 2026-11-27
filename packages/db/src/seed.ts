@@ -1,3 +1,4 @@
+import { transportLabel } from "@tourism/contracts";
 import { sql } from "drizzle-orm";
 import { createDatabase } from "./index";
 import { seedCategories, seedDestinations } from "./seed-data";
@@ -81,7 +82,7 @@ await db.transaction(async (tx) => {
     }
     for (const slug of item.travelerTypes) await tx.insert(destinationTravelerTypes).values({ destinationId: item.id, travelerTypeId: stableUuid("traveler", slug) }).onConflictDoNothing();
     for (const month of item.bestMonths) await tx.insert(destinationSeasonality).values({ destinationId: item.id, month, score: "1" }).onConflictDoNothing();
-    for (const mode of item.transportModes) await tx.insert(transportAvailability).values({ destinationId: item.id, mode, labelEn: mode === "airplane" ? "Flights available nearby" : `${mode[0]?.toUpperCase()}${mode.slice(1)} available`, labelTh: mode === "airplane" ? "มีเที่ยวบินไปยังสนามบินใกล้เคียง" : `เดินทางด้วย${mode}` }).onConflictDoNothing();
+    for (const mode of item.transportModes) await tx.insert(transportAvailability).values({ destinationId: item.id, mode, labelEn: transportLabel(mode, "en"), labelTh: transportLabel(mode, "th") }).onConflictDoNothing();
   }
 });
 

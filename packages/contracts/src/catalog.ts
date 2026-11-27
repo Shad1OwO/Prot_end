@@ -41,3 +41,13 @@ const catalogImageUrlSchema = z.url().refine((value) => {
 }, { message: `Image URLs must be HTTPS and hosted on: ${allowedImageHosts.join(", ")}` });
 export const catalogImportSchema = z.object({ destinations: z.array(z.object({ slug: z.string().min(1), scope: scopeSchema, translations: z.record(localeSchema, z.object({ name: z.string().min(1), shortDescription: z.string().min(1), description: z.string().min(1) })), coordinates: coordinateSchema, categorySlugs: z.array(z.string()).min(1).max(20), imageUrls: z.array(catalogImageUrlSchema).min(1).max(20) })).min(1).max(500) });
 export const mediaUploadRequestSchema = z.object({ fileName: z.string().min(1).max(200), contentType: z.enum(["image/jpeg", "image/png", "image/webp"]), sizeBytes: z.number().int().positive().max(15 * 1024 * 1024), sha256: z.string().regex(/^[a-f0-9]{64}$/) });
+
+const transportLabels: Record<z.infer<typeof localeSchema>, Record<z.infer<typeof transportModeSchema>, string>> = {
+  en: { car: "By car", rail: "By train", transit: "By public transport", airplane: "Flights to a nearby airport" },
+  th: { car: "เดินทางโดยรถยนต์", rail: "เดินทางโดยรถไฟ", transit: "เดินทางโดยขนส่งสาธารณะ", airplane: "มีเที่ยวบินไปยังสนามบินใกล้เคียง" },
+};
+
+/** The "Getting there" label for a transport mode. Migration 0005 writes the same text into transport_availability. */
+export function transportLabel(mode: z.infer<typeof transportModeSchema>, locale: z.infer<typeof localeSchema>): string {
+  return transportLabels[locale][mode];
+}

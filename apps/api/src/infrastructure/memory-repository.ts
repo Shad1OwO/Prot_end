@@ -17,6 +17,7 @@ import type {
   User,
   UserPreferences,
 } from "@tourism/contracts";
+import { transportLabel } from "@tourism/contracts";
 import { seedCategories, seedDestinations, type SeedDestination } from "@tourism/db/seed-data";
 import type {
   AppRepository,
@@ -146,7 +147,7 @@ export class InMemoryRepository implements AppRepository {
       description: item[locale].description,
       address: item.address,
       images: [card.primaryImage],
-      transports: item.transportModes.map((mode) => ({ mode, available: true, durationMinutes: null, distanceKm: null, label: mode === "airplane" ? (locale === "th" ? "มีเที่ยวบินไปยังสนามบินใกล้เคียง" : "Flights available nearby") : (locale === "th" ? `เดินทางด้วย${mode}` : `${mode[0]?.toUpperCase()}${mode.slice(1)} available`) })),
+      transports: item.transportModes.map((mode) => ({ mode, available: true, durationMinutes: null, distanceKm: null, label: transportLabel(mode, locale) })),
       bestMonths: item.bestMonths,
       openingHours: null,
       websiteUrl: null,

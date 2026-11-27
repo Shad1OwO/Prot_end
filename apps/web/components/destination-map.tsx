@@ -2,19 +2,39 @@
 
 import type { DestinationCard, Locale } from "@tourism/contracts";
 import { CircleMarker, MapContainer, TileLayer, Tooltip, useMap } from "react-leaflet";
-import { useEffect } from "react";
+import type { Map as LeafletMap } from "leaflet";
+import { useEffect, useRef } from "react";
 
+function fitTo(map: LeafletMap, destinations: DestinationCard[]) {
+  if (destinations.length === 0) return;
+  if (destinations.length === 1) {
+    const only = destinations[0];
+    if (only) map.setView([only.coordinates.latitude, only.coordinates.longitude], 9);
+    return;
+  }
+  map.fitBounds(destinations.map((item) => [item.coordinates.latitude, item.coordinates.longitude]), { padding: [32, 32], maxZoom: 10 });
+}
+
+// On phones the explore map starts hidden (List view), so Leaflet first measures it as 0×0 and fits to nothing.
+// Re-measure whenever the container resizes, and fit again the moment it goes from hidden to visible.
 function FitDestinations({ destinations }: { destinations: DestinationCard[] }) {
   const map = useMap();
+  const latest = useRef(destinations);
   useEffect(() => {
-    if (destinations.length === 0) return;
-    if (destinations.length === 1) {
-      const only = destinations[0];
-      if (only) map.setView([only.coordinates.latitude, only.coordinates.longitude], 9);
-      return;
-    }
-    map.fitBounds(destinations.map((item) => [item.coordinates.latitude, item.coordinates.longitude]), { padding: [32, 32], maxZoom: 10 });
+    latest.current = destinations;
+    fitTo(map, destinations);
   }, [destinations, map]);
+  useEffect(() => {
+    let wasHidden = map.getSize().x === 0 || map.getSize().y === 0;
+    const observer = new ResizeObserver(() => {
+      map.invalidateSize();
+      const hidden = map.getSize().x === 0 || map.getSize().y === 0;
+      if (wasHidden && !hidden) fitTo(map, latest.current);
+      wasHidden = hidden;
+    });
+    observer.observe(map.getContainer());
+    return () => observer.disconnect();
+  }, [map]);
   return null;
 }
 
