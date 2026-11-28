@@ -498,7 +498,7 @@ export class InMemoryRepository implements AppRepository {
       province: item.provinceCode,
       city: item.cityCode,
       coordinates: { latitude: item.latitude, longitude: item.longitude },
-      primaryImage: { id: `${item.id.slice(0, -1)}9`, url: item.imageUrl, alt: translation.name, width: item.imageWidth, height: item.imageHeight, isPrimary: true },
+      primaryImage: { id: `3${item.id.slice(1)}`, url: item.imageUrl, alt: translation.name, width: item.imageWidth, height: item.imageHeight, isPrimary: true, ...(item.imageCredit ? { attribution: { author: item.imageCredit.author, license: item.imageCredit.license, licenseUrl: item.imageCredit.licenseUrl, sourceUrl: item.imageCredit.pageUrl } } : {}) },
       categories: item.categorySlugs.flatMap((slug) => {
         const category = categoryBySlug[slug];
         return category ? [{ id: category.id, slug: category.slug, name: category[locale], icon: category.icon, destinationCount: seedDestinations.filter((destination) => destination.categorySlugs.includes(slug)).length }] : [];
