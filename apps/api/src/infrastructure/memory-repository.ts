@@ -98,7 +98,8 @@ export class InMemoryRepository implements AppRepository {
   readonly #trips = new Map<string, MemoryTripState>();
   readonly #recommendations = new Map<string, StoredRecommendation>();
   readonly #history: Array<{ userId: string; jobId: string; redactedPrompt: string; expiresAt: Date }> = [];
-  readonly #imports: CatalogImport[] = [];
+  /** The seed places plus anything sent to the catalog import endpoint. Every catalog read goes through this list. */
+  readonly #catalog: SeedDestination[] = [...seedDestinations];
 
   constructor() {
     const id = "00000000-0000-4000-8000-000000000001";
@@ -111,7 +112,7 @@ export class InMemoryRepository implements AppRepository {
 
   async list(query: DestinationQuery, userId?: string): Promise<DestinationListResponse> {
     const normalizedQuery = query.query?.toLocaleLowerCase(query.locale);
-    let items = seedDestinations.filter((item) => item.scope === query.scope);
+    let items = this.#catalog.filter((item) => item.scope === query.scope);
     if (normalizedQuery) items = items.filter((item) => {
       const translation = item[query.locale];
       return `${translation.name} ${translation.shortDescription} ${translation.description}`.toLocaleLowerCase(query.locale).includes(normalizedQuery);
@@ -139,7 +140,7 @@ export class InMemoryRepository implements AppRepository {
   }
 
   async getBySlug(slug: string, locale: Locale, userId?: string): Promise<DestinationDetail | null> {
-    const item = seedDestinations.find((candidate) => candidate.slug === slug);
+    const item = this.#catalog.find((candidate) => candidate.slug === slug);
     if (!item) return null;
     const card = this.#toCard(item, locale, userId);
     return {
@@ -156,7 +157,7 @@ export class InMemoryRepository implements AppRepository {
   }
 
   async getByIds(ids: string[], locale: Locale, userId?: string): Promise<DestinationCard[]> {
-    const byId = new Map(seedDestinations.map((item) => [item.id, item]));
+    const byId = new Map(this.#catalog.map((item) => [item.id, item]));
     return ids.flatMap((id) => {
       const item = byId.get(id);
       return item ? [this.#toCard(item, locale, userId)] : [];
@@ -169,12 +170,12 @@ export class InMemoryRepository implements AppRepository {
       slug: category.slug,
       name: category[locale],
       icon: category.icon,
-      destinationCount: seedDestinations.filter((destination) => destination.categorySlugs.includes(category.slug)).length,
+      destinationCount: this.#catalog.filter((destination) => destination.categorySlugs.includes(category.slug)).length,
     }));
   }
 
   async home(locale: Locale, scope: "thailand" | "worldwide", userId?: string): Promise<HomeSections> {
-    const scoped = seedDestinations.filter((item) => item.scope === scope);
+    const scoped = this.#catalog.filter((item) => item.scope === scope);
     const cards = (predicate: (item: SeedDestination) => boolean) => scoped.filter(predicate).slice(0, 8).map((item) => this.#toCard(item, locale, userId));
     const preferences = userId ? this.#users.get(userId)?.preferences : undefined;
     const personalized = preferences?.preferredCategories.length
@@ -208,8 +209,45 @@ export class InMemoryRepository implements AppRepository {
     return broad.items;
   }
 
+  /** Adds or updates places by slug, as the Postgres repository does. An update keeps the place's id, likes and rating. */
   async importCatalog(input: CatalogImport): Promise<{ imported: number }> {
-    this.#imports.push(input);
+    for (const item of input.destinations) {
+      const index = this.#catalog.findIndex((candidate) => candidate.slug === item.slug);
+      const existing = index >= 0 ? this.#catalog[index] : undefined;
+      const imageUrl = item.imageUrls[0];
+      if (!imageUrl) continue;
+      const record: SeedDestination = {
+        id: existing?.id ?? crypto.randomUUID(),
+        slug: item.slug,
+        scope: item.scope,
+        // The import carries no country, so worldwide places share the same placeholder code as in Postgres.
+        countryCode: item.scope === "thailand" ? "TH" : "ZZ",
+        provinceCode: null,
+        cityCode: null,
+        latitude: item.coordinates.latitude,
+        longitude: item.coordinates.longitude,
+        wikidataIds: [],
+        address: item.translations.en.name,
+        categorySlugs: item.categorySlugs.filter((slug) => slug in categoryBySlug),
+        travelerTypes: existing?.travelerTypes ?? [],
+        imageUrl,
+        // The import sends no image size; a landscape placeholder keeps cards and pages laid out sensibly.
+        imageWidth: 1600,
+        imageHeight: 1067,
+        rating: existing?.rating ?? 0,
+        likesCount: existing?.likesCount ?? 0,
+        featured: existing?.featured ?? false,
+        trending: existing?.trending ?? false,
+        popular: existing?.popular ?? false,
+        seasonal: existing?.seasonal ?? false,
+        bestMonths: existing?.bestMonths ?? [],
+        transportModes: existing?.transportModes ?? [],
+        en: item.translations.en,
+        th: item.translations.th,
+      };
+      if (existing) this.#catalog[index] = record;
+      else this.#catalog.push(record);
+    }
     return { imported: input.destinations.length };
   }
 
@@ -392,7 +430,7 @@ export class InMemoryRepository implements AppRepository {
 
   async addDestination(userId: string, tripId: string, destinationId: string, notes: string | null | undefined, locale: Locale): Promise<Trip | null> {
     const trip = this.#trips.get(tripId);
-    if (!trip || trip.userId !== userId || !seedDestinations.some((item) => item.id === destinationId)) return null;
+    if (!trip || trip.userId !== userId || !this.#catalog.some((item) => item.id === destinationId)) return null;
     if (!trip.destinationIds.includes(destinationId)) trip.destinationIds.push(destinationId);
     if (notes !== undefined) trip.destinationNotes[destinationId] = notes;
     trip.updatedAt = new Date().toISOString();
@@ -501,7 +539,7 @@ export class InMemoryRepository implements AppRepository {
       primaryImage: { id: `3${item.id.slice(1)}`, url: item.imageUrl, alt: translation.name, width: item.imageWidth, height: item.imageHeight, isPrimary: true, ...(item.imageCredit ? { attribution: { author: item.imageCredit.author, license: item.imageCredit.license, licenseUrl: item.imageCredit.licenseUrl, sourceUrl: item.imageCredit.pageUrl } } : {}) },
       categories: item.categorySlugs.flatMap((slug) => {
         const category = categoryBySlug[slug];
-        return category ? [{ id: category.id, slug: category.slug, name: category[locale], icon: category.icon, destinationCount: seedDestinations.filter((destination) => destination.categorySlugs.includes(slug)).length }] : [];
+        return category ? [{ id: category.id, slug: category.slug, name: category[locale], icon: category.icon, destinationCount: this.#catalog.filter((destination) => destination.categorySlugs.includes(slug)).length }] : [];
       }),
       travelerTypes: item.travelerTypes,
       rating: item.rating,

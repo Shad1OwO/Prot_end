@@ -1,7 +1,10 @@
 import { getWorkerEnvironment } from "@tourism/config";
 import { recommendationFailedMessage } from "@tourism/contracts";
 import { PostgresRepository } from "@tourism/api/postgres-repository";
+import { createDatabase } from "@tourism/db";
+import { lastImportedAt } from "@tourism/db/catalog-import/writer";
 import { Worker } from "bullmq";
+import { findCatalogImportScript, scheduleCatalogImport, startCatalogImportProcess } from "./catalog-import";
 import { AiProviderRouter } from "./providers/ai";
 import { filterByDrivingDistance, GoogleMapsRoutingProvider } from "./providers/maps";
 
@@ -37,6 +40,29 @@ const worker = new Worker("recommendations", async (queueJob) => {
 }, { connection: { host: redis.hostname, port: Number(redis.port || 6379), username: redis.username || undefined, password: redis.password || undefined, tls: redis.protocol === "rediss:" ? {} : undefined }, concurrency: 4 });
 
 console.info(JSON.stringify({ level: "info", message: "worker_started", concurrency: 4 }));
-async function shutdown() { await worker.close(); await repository.close(); process.exit(0); }
+
+// Fills the worldwide catalog from Wikidata without anyone running the import by hand.
+const catalogDatabase = createDatabase(env.DATABASE_URL);
+let catalogImportProcess: ReturnType<typeof startCatalogImportProcess> | null = null;
+const catalogImportScript = findCatalogImportScript();
+const logEvent = (event: Record<string, unknown>) => (event.level === "error" ? console.error : event.level === "warn" ? console.warn : console.info)(JSON.stringify(event));
+const catalogSchedule = env.CATALOG_IMPORT_INTERVAL_DAYS > 0 && catalogImportScript
+  ? scheduleCatalogImport({
+    intervalDays: env.CATALOG_IMPORT_INTERVAL_DAYS,
+    lastImportedAt: () => lastImportedAt(catalogDatabase.db),
+    runImport: async () => {
+      catalogImportProcess = startCatalogImportProcess(catalogImportScript);
+      try {
+        return await catalogImportProcess.exited;
+      } finally {
+        catalogImportProcess = null;
+      }
+    },
+    log: logEvent,
+  })
+  : null;
+if (!catalogSchedule) logEvent({ level: catalogImportScript ? "info" : "warn", message: "catalog_import_schedule_off", reason: catalogImportScript ? "CATALOG_IMPORT_INTERVAL_DAYS is 0" : "packages/db/src/catalog-import/run.ts was not found" });
+
+async function shutdown() { catalogSchedule?.stop(); catalogImportProcess?.kill(); await worker.close(); await repository.close(); await catalogDatabase.client.end(); process.exit(0); }
 process.once("SIGINT", () => { void shutdown(); });
 process.once("SIGTERM", () => { void shutdown(); });

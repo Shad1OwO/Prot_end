@@ -37,6 +37,15 @@ export async function loadCachedThai(db: Database): Promise<Map<string, CachedTh
   return cache;
 }
 
+/** When the import last wrote, or null if it never has. Every full or limited run sets updated_at on each place it writes. */
+export async function lastImportedAt(db: Database): Promise<Date | null> {
+  const [row] = await db
+    .select({ at: sql<Date | string | null>`max(${destinations.updatedAt})` })
+    .from(destinations)
+    .where(eq(destinations.source, importSource));
+  return row?.at ? new Date(row.at) : null;
+}
+
 /** Where the hand-written destinations are, so the import can skip Wikidata duplicates of them. */
 export async function loadCuratedPoints(db: Database): Promise<CuratedPoint[]> {
   const rows = await db

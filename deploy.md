@@ -120,7 +120,7 @@ docker compose run --rm api bun packages/db/src/seed.ts
 docker compose up -d
 ```
 
-Then fill the catalog with worldwide places (next section).
+The worker then fills the catalog with worldwide places on its own (next section).
 
 With a remote database you can instead run `bun run db:migrate` and `bun run db:seed` from any machine
 that has Bun, the repo, and `DATABASE_URL` set. The bundled Postgres is not reachable from the host,
@@ -165,7 +165,23 @@ without a restart.
 The seed holds only a handful of hand-written destinations. The catalog import adds about 3,800 notable places
 from all over the world (Thailand included), taken from Wikidata, Wikipedia and Wikimedia Commons:
 tourist attractions, World Heritage Sites and national parks with articles in at least 10 Wikipedia
-languages. It needs no API key. Run it after the migrations, inside the `api` image, which has internet access:
+languages. It needs no API key.
+
+**It runs by itself.** When the worker starts and the database holds no imported places, it starts the
+import straight away, then again every `CATALOG_IMPORT_INTERVAL_DAYS` days (default 30). It reads the date
+of the last import from the database, so restarting the worker neither repeats a recent import nor skips a
+due one. A run that fails is tried again 6 hours later. Follow it in the worker's log:
+
+```sh
+docker compose logs -f worker | grep -E 'catalog[-_]import'
+```
+
+`catalog_import_started` and `catalog_import_finished` (or `catalog_import_failed` with the exit code) frame
+each run, and the import's own `[catalog-import]` progress lines appear in between. Set
+`CATALOG_IMPORT_INTERVAL_DAYS=0` in `.env` to turn the schedule off and run it only by hand.
+
+You can still run it yourself, inside the `api` image, which has internet access. Wait until the worker
+is not in the middle of a run, so two imports do not write at once:
 
 ```sh
 # a trial first: fetches 50 places and prints what it would do, without writing anything
@@ -198,8 +214,7 @@ one request every 6.5 seconds to stay inside Gemini's free tier: expect roughly 
   imported before that no longer qualify. It never touches the hand-written destinations, and skips
   the Wikidata items they stand for (`wikidataIds` in `packages/db/src/seed-data.ts`) and anything within
   300 m of one, so they do not appear twice. If any request to Wikimedia fails
-  after retries, it stops without writing anything and exits with status 1: run it again later.
-  Re-running every few months is enough.
+  after retries, it stops without writing anything and exits with status 1; the worker tries again 6 hours later.
 - **Options.** `--min-sitelinks=N` changes the notability cut-off (higher means fewer, better-known
   places; 20 gives about 2,100). `--limit=N` imports only the N best-known places and never archives.
   `--no-translate` skips Gemini. `--dry-run` writes nothing and does not call Gemini.

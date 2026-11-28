@@ -64,6 +64,8 @@ export const workerEnvironmentSchema = sharedSchema.extend({
   MEDIA_CLAMAV_HOST: z.string().default("clamav"),
   MEDIA_CLAMAV_PORT: z.coerce.number().int().positive().default(3310),
   HISTORY_RETENTION_DAYS: z.coerce.number().int().positive().default(90),
+  /** Days between automatic worldwide catalog imports from Wikidata; the first runs as soon as the catalog has none. 0 turns them off. */
+  CATALOG_IMPORT_INTERVAL_DAYS: z.coerce.number().min(0).default(30),
 });
 
 export type ApiEnvironment = z.infer<typeof apiEnvironmentSchema>;
