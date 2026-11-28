@@ -31,7 +31,7 @@ export interface BuildResult {
 }
 
 /** Only a place this close to a curated one, or its own Wikidata item, is a duplicate: Wat Pho is 1.8 km from Yaowarat. */
-const curatedRadiusKm = 0.3;
+export const curatedRadiusKm = 0.3;
 const maxTranslationFailures = 2;
 const textFields: TextField[] = ["name", "shortDescription", "description"];
 

@@ -3,6 +3,7 @@ import { recommendationFailedMessage } from "@tourism/contracts";
 import { PostgresRepository } from "@tourism/api/postgres-repository";
 import { createDatabase } from "@tourism/db";
 import { lastImportedAt } from "@tourism/db/catalog-import/writer";
+import { seedCatalog } from "@tourism/db/seed-catalog";
 import { Worker } from "bullmq";
 import { findCatalogImportScript, scheduleCatalogImport, startCatalogImportProcess } from "./catalog-import";
 import { AiProviderRouter } from "./providers/ai";
@@ -41,11 +42,18 @@ const worker = new Worker("recommendations", async (queueJob) => {
 
 console.info(JSON.stringify({ level: "info", message: "worker_started", concurrency: 4 }));
 
-// Fills the worldwide catalog from Wikidata without anyone running the import by hand.
+// Adds the hand-written places from seed-data.ts that the database lacks, then fills the worldwide catalog
+// from Wikidata, without anyone running either by hand. The seed goes first so the import skips its places.
 const catalogDatabase = createDatabase(env.DATABASE_URL);
+const logEvent = (event: Record<string, unknown>) => (event.level === "error" ? console.error : event.level === "warn" ? console.warn : console.info)(JSON.stringify(event));
+try {
+  const seeded = await seedCatalog(catalogDatabase.db);
+  logEvent({ level: "info", message: "catalog_seed_finished", added: seeded.added, archivedDuplicates: seeded.archivedDuplicates, skipped: seeded.skipped });
+} catch (error) {
+  logEvent({ level: "error", message: "catalog_seed_failed", error: error instanceof Error ? error.message : String(error) });
+}
 let catalogImportProcess: ReturnType<typeof startCatalogImportProcess> | null = null;
 const catalogImportScript = findCatalogImportScript();
-const logEvent = (event: Record<string, unknown>) => (event.level === "error" ? console.error : event.level === "warn" ? console.warn : console.info)(JSON.stringify(event));
 const catalogSchedule = env.CATALOG_IMPORT_INTERVAL_DAYS > 0 && catalogImportScript
   ? scheduleCatalogImport({
     intervalDays: env.CATALOG_IMPORT_INTERVAL_DAYS,

@@ -112,19 +112,20 @@ protected by Cloudflare Access, after attaching them to the `edge` network).
 docker compose build --pull
 docker compose up -d postgres redis minio
 
-# apply migrations (0000-0005), then seed the catalog on the first deploy only
+# apply migrations (0000-0005)
 docker compose run --rm api bun packages/db/src/migrate.ts
-docker compose run --rm api bun packages/db/src/seed.ts
 
 # start everything
 docker compose up -d
 ```
 
-The worker then fills the catalog with worldwide places on its own (next section).
+When the worker starts, it adds the hand-written destinations from `packages/db/src/seed-data.ts`, then
+fills the catalog with worldwide places on its own (next section). Its log shows `catalog_seed_finished`
+with the places it added, or `catalog_seed_failed` with the reason.
 
-With a remote database you can instead run `bun run db:migrate` and `bun run db:seed` from any machine
-that has Bun, the repo, and `DATABASE_URL` set. The bundled Postgres is not reachable from the host,
-which is why the commands above run inside the `api` image.
+With a remote database you can instead run `bun run db:migrate` from any machine that has Bun, the repo,
+and `DATABASE_URL` set. The bundled Postgres is not reachable from the host, which is why the command
+above runs inside the `api` image.
 
 On the tunnel in the Cloudflare dashboard, add two public hostname routes for `APP_HOST`, in this order
 (the first match wins):
@@ -148,12 +149,17 @@ Nothing applies migrations automatically, so every update runs them before the n
 git pull
 docker compose build --pull
 
-# apply any new migrations; already-applied ones are skipped. Do not run the seed again.
+# apply any new migrations; already-applied ones are skipped
 docker compose run --rm api bun packages/db/src/migrate.ts
 
 # restart with the new images
 docker compose up -d
 ```
+
+The restarted worker adds any hand-written destinations that are new in `seed-data.ts`. It never changes
+places already in the database, so likes, ratings and edits stay as they are. When it adds a place that
+the catalog import also brought in from Wikidata, it hides the imported copy, so Explore lists it once.
+To run the same seed by hand: `docker compose run --rm api bun packages/db/src/seed.ts`.
 
 Migrations here only add columns, tables and indexes, so the old code keeps working while they run. If
 the update is started without them, the new API fails on queries that use the new columns: destination

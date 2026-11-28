@@ -50,7 +50,7 @@ Apply the database before switching traffic:
 
 ```sh
 DATABASE_URL="$DATABASE_URL" bun run db:migrate
-DATABASE_URL="$DATABASE_URL" bun run db:seed  # first deployment only; idempotent
+DATABASE_URL="$DATABASE_URL" bun run db:seed  # optional: the worker runs it on every start; adds only missing places
 ```
 
 Start and verify:
